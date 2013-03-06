@@ -24,15 +24,15 @@
 #include <curl/easy.h>
 #include "FileUtils/FileUtils.h"
 #include <cctype>
-#include "Settings.h"
 #include "JSONHandler.h"
-
-CHTTPHandler g_HTTPHandler;
+#include <algorithm>
+#include "CTiXmlHelper.h"
 
 using namespace std;
 
-CHTTPHandler::CHTTPHandler()
+CHTTPHandler::CHTTPHandler(bool fake_uploads)
 {
+  m_bFakeUploads = fake_uploads;
   m_curlHandle = curl_easy_init();
 };
 
@@ -41,13 +41,35 @@ CHTTPHandler::~CHTTPHandler()
   Cleanup();
 };
 
-std::string CHTTPHandler::GetURLToSTR(std::string strURL, bool bSkiperror /*=false*/)
+std::string CHTTPHandler::GetURLToSTR(const CHTTPCachedItem &urlcached, bool bSkiperror)
 {
   std::string strBuffer;
-  std::string strCacheFile = CacheFileNameFromURL(strURL);
+  std::string strCacheFile = urlcached.LocalName;
   strCacheFile = m_strCacheDir + "GET/" + strCacheFile;
+  
+  std::replace(strCacheFile.begin(), strCacheFile.end(),'/', DirSepChar);
 
-  if (!g_File.FileExist(strCacheFile) || g_File.GetFileAge(strCacheFile) > g_Settings.GetHTTPCacheExpire() * 60)
+  if (!g_File.FileExist(strCacheFile) || g_File.GetFileAge(strCacheFile) > m_HTTPExpireTime * 60)
+  {
+    long result = curlURLToCache(strCacheFile, urlcached.URL, bSkiperror, strBuffer);
+    if (result < 200 || result >= 400)
+      return "";
+  }
+  else
+    strBuffer = g_File.ReadFileToStr(strCacheFile);
+
+  return strBuffer;
+}
+std::string CHTTPHandler::GetURLToSTR(std::string strURL, bool bSkiperror /*=false*/)
+{
+  CHTTPCachedItem temp = CHTTPCachedItem(strURL);
+  std::string strBuffer;
+  std::string strCacheFile = temp.LocalName;
+  strCacheFile = m_strCacheDir + "GET/" + strCacheFile;
+  
+  std::replace(strCacheFile.begin(), strCacheFile.end(),'/', DirSepChar);
+
+  if (!g_File.FileExist(strCacheFile) || g_File.GetFileAge(strCacheFile) >  m_HTTPExpireTime * 60)
   {
     long result = curlURLToCache(strCacheFile, strURL, bSkiperror, strBuffer);
     if (result < 200 || result >= 400)
@@ -87,7 +109,7 @@ long CHTTPHandler::curlURLToCache(std::string strCacheFile, std::string strURL, 
       curl_easy_getinfo (m_curlHandle, CURLINFO_RESPONSE_CODE, &http_code);
 
       if (curlResult == 0 && http_code >= 200 && http_code < 400)
-        CLog::Log(logINFO, "HTTPHandler: curlURLToCache finished with success from URL %s to cachefile %s, read filesize: %ibytes",
+        CLog::Log(logINFO, "HTTPHandler: curlURLToCache finished with success from URL %s to cachefile %s, read filesize: %i bytes",
                   strURL.c_str(), strCacheFile.c_str(), strBuffer.size());
       else
       {
@@ -164,7 +186,7 @@ size_t Read_CurlData_String(void * ptr, size_t size, size_t nmemb, void * stream
 
     if (available > 0)
     {
-      size_t written = std::min(size * nmemb, available);
+      size_t written = std::min<size_t>(size * nmemb, available);
       memcpy(ptr, &pPutStrData->pPOString->at(pPutStrData->pos), written); 
       pPutStrData->pos += written;
       return written; 
@@ -174,64 +196,46 @@ size_t Read_CurlData_String(void * ptr, size_t size, size_t nmemb, void * stream
   return 0; 
 }
 
-
-void CHTTPHandler::SetCacheDir(std::string strCacheDir)
+void CHTTPHandler::SetCacheDir(std::string strCacheDir, size_t cache_expire_time_minutes)
 {
+  m_HTTPExpireTime = cache_expire_time_minutes;
   if (!g_File.DirExists(strCacheDir))
     g_File.MakeDir(strCacheDir);
   m_strCacheDir = strCacheDir + DirSepChar;
   CLog::Log(logINFO, "HTTPHandler: Cache directory set to: %s", strCacheDir.c_str());
 };
 
-std::string CHTTPHandler::CacheFileNameFromURL(std::string strURL)
+bool CHTTPHandler::HaveCredentials ()
 {
-  std::string strResult;
-  std::string strCharsToKeep  = "/.-=_() ";
-  std::string strReplaceChars = "/.-=_() ";
-
-  std::string hexChars = "01234567890abcdef"; 
-
-  for (std::string::iterator it = strURL.begin(); it != strURL.end(); it++)
-  {
-    if (isalnum(*it))
-      strResult += *it;
-    else
-    {
-      size_t pos = strCharsToKeep.find(*it);
-      if (pos != std::string::npos)
-        strResult += strReplaceChars[pos];
-      else
-      {
-        strResult += "%";
-        strResult += hexChars[(*it >> 4) & 0x0F];
-        strResult += hexChars[*it & 0x0F];
-      }
-    }
-  }
-
-  if (strResult.at(strResult.size()-1) == '/')
-    strResult[strResult.size()-1] = '-';
-
-  return strResult;
-};
-
+  return m_mapLoginData.size() > 0;
+}
 bool CHTTPHandler::LoadCredentials (std::string CredentialsFilename)
 {
   TiXmlDocument xmlPasswords;
 
-  if (!xmlPasswords.LoadFile(CredentialsFilename.c_str()))
+  CLog::Log(logINFO, "HTTPHandler: Looking for %s.", CredentialsFilename.c_str());
+  
+  if (g_File.FileExist(CredentialsFilename))
   {
-    CLog::Log(logINFO, "HTTPHandler: No \".passwords.xml\" file exists in project dir. No password protected web download will be available.");
+    if (!xmlPasswords.LoadFile(CredentialsFilename.c_str()))
+    {
+      CLog::Log(logINFO, "TinyXml: Error while loading password file.");
+      return false;
+    }
+  }
+  else
+  {
+    CLog::Log(logINFO, "HTTPHandler: No password file found.");
     return false;
   }
 
-  CLog::Log(logINFO, "HTTPHandler: Succesfuly found the .passwsords.xml file: %s", CredentialsFilename.c_str());
+  CLog::Log(logINFO, "HTTPHandler: Succesfully found a password file.");
 
-  TiXmlElement* pRootElement = xmlPasswords.RootElement();
+  TiXmlElement* pRootElement;
 
-  if (!pRootElement || pRootElement->NoChildren() || pRootElement->ValueTStr()!="websites")
+  if (!CTiXmlHelper::HasRoot(&xmlPasswords,"websites", pRootElement))
   {
-    CLog::Log(logWARNING, "HTTPHandler: No root element called \"websites\" in xml file.");
+    CLog::Log(logWARNING, "HTTPHandler: No root element called \"websites\" in the password file.");
     return false;
   }
 
@@ -243,15 +247,11 @@ bool CHTTPHandler::LoadCredentials (std::string CredentialsFilename)
     std::string strWebSitePrefix = pChildElement->Attribute("prefix");
     if (pChildElement->FirstChild())
     {
-      const TiXmlElement *pChildLOGINElement = pChildElement->FirstChildElement("login");
-      if (pChildLOGINElement && pChildLOGINElement->FirstChild())
-        LoginData.strLogin = pChildLOGINElement->FirstChild()->Value();
-      const TiXmlElement *pChildPASSElement = pChildElement->FirstChildElement("password");
-      if (pChildPASSElement && pChildPASSElement->FirstChild())
-        LoginData.strPassword = pChildPASSElement->FirstChild()->Value();
+        LoginData.strLogin = CTiXmlHelper::GetInnerText(pChildElement->FirstChildElement("login"));
+        LoginData.strPassword = CTiXmlHelper::GetInnerText(pChildElement->FirstChildElement("password"));
 
       m_mapLoginData [strWebSitePrefix] = LoginData;
-      CLog::Log(logINFO, "HTTPHandler: found login credentials for website prefix: %s", strWebSitePrefix.c_str());
+      CLog::Log(logINFO, "HTTPHandler: Found login credentials for website prefix: %s", strWebSitePrefix.c_str());
     }
     pChildElement = pChildElement->NextSiblingElement("website");
   }
@@ -287,25 +287,31 @@ std::string CHTTPHandler::URLEncode (std::string strURL)
   return strOut;
 }
 
+bool CHTTPHandler::GetCachedPath(HTTPCacheStore store, const CHTTPCachedItem &urlcached, std::string &strPath)
+{
+  if (store == CACHE_UPLOAD)
+  {
+    strPath = m_strCacheDir + "PUT/" + urlcached.LocalName;
+  }
+  else
+  {
+    strPath = m_strCacheDir + "GET/" + urlcached.LocalName;
+  }
 
+  std::replace(strPath.begin(), strPath.end(),'/', DirSepChar);
 
-bool CHTTPHandler::PutFileToURL(std::string const &strFilePath, std::string const &strURL, bool &buploaded,
+  return g_File.FileExist(strPath);
+}
+
+bool CHTTPHandler::PutFileToURL(std::string const &strFilePath, const CHTTPCachedItem &urlcached, bool &buploaded, bool bPOComparison,
                                 size_t &stradded, size_t &strupd)
 {
-  std::string strBuffer;
-  std::string strCacheFile = CacheFileNameFromURL(strURL);
-  strCacheFile = m_strCacheDir + "PUT/" + strCacheFile;
-
-  if (g_File.FileExist(strCacheFile) && ComparePOFiles(strCacheFile, strFilePath))
-  {
-    CLog::Log(logINFO, "HTTPHandler::PutFileToURL: not necesarry to upload file as it has not changed from last upload. File: %s",
-              strFilePath.c_str());
-    return true;
-  }
+  std::string strCacheFile;
+  GetCachedPath(CACHE_UPLOAD, urlcached, strCacheFile);
 
   CLog::Log(logINFO, "HTTPHandler::PutFileToURL: Uploading file to Transifex: %s", strFilePath.c_str());
 
-  long result = curlPUTPOFileToURL(strFilePath, strURL, stradded, strupd);
+  long result = curlPUTPOFileToURL(strFilePath, urlcached.URL, stradded, strupd);
   if (result < 200 || result >= 400)
   {
     CLog::Log(logERROR, "HTTPHandler::PutFileToURL: File upload was unsuccessful, http errorcode: %i", result);
@@ -313,7 +319,7 @@ bool CHTTPHandler::PutFileToURL(std::string const &strFilePath, std::string cons
   }
 
   CLog::Log(logINFO, "HTTPHandler::PutFileToURL: File upload was successful so creating a copy at the .httpcache directory");
-  g_File.CopyFile(strFilePath, strCacheFile);
+  g_File.CpFile(strFilePath, strCacheFile);
 
   buploaded = true;
 
@@ -322,9 +328,17 @@ bool CHTTPHandler::PutFileToURL(std::string const &strFilePath, std::string cons
 
 long CHTTPHandler::curlPUTPOFileToURL(std::string const &strFilePath, std::string const &cstrURL, size_t &stradded, size_t &strupd)
 {
+
   CURLcode curlResult;
 
   std::string strURL = URLEncode(cstrURL);
+  
+  if (m_bFakeUploads)
+  {
+      CLog::Log(logINFO, "HTTPHandler::curlFileToURL faked with success from File %s to URL %s",
+            strFilePath.c_str(), strURL.c_str());
+    return 200;
+  }
 
   std::string strPO = g_File.ReadFileToStr(strFilePath);
 
@@ -384,61 +398,22 @@ long CHTTPHandler::curlPUTPOFileToURL(std::string const &strFilePath, std::strin
   return 700;
 };
 
-bool CHTTPHandler::ComparePOFiles(std::string strPOFilePath1, std::string strPOFilePath2) const
-{
-  CPOHandler POHandler1, POHandler2;
-  POHandler1.ParsePOStrToMem(g_File.ReadFileToStr(strPOFilePath1), strPOFilePath1);
-  POHandler2.ParsePOStrToMem(g_File.ReadFileToStr(strPOFilePath2), strPOFilePath2);
-  return ComparePOFilesInMem(&POHandler1, &POHandler2, false);
-}
-
-bool CHTTPHandler::ComparePOFilesInMem(CPOHandler * pPOHandler1, CPOHandler * pPOHandler2, bool bLangIsEN) const
-{
-  if (!pPOHandler1 || !pPOHandler2)
-    return false;
-  if (pPOHandler1->GetNumEntriesCount() != pPOHandler2->GetNumEntriesCount())
-    return false;
-  if (pPOHandler1->GetClassEntriesCount() != pPOHandler2->GetClassEntriesCount())
-    return false;
-
-  for (size_t POEntryIdx = 0; POEntryIdx != pPOHandler1->GetNumEntriesCount(); POEntryIdx++)
-  {
-    CPOEntry POEntry1 = *(pPOHandler1->GetNumPOEntryByIdx(POEntryIdx));
-    const CPOEntry * pPOEntry2 = pPOHandler2->GetNumPOEntryByID(POEntry1.numID);
-    if (!pPOEntry2)
-      return false;
-    CPOEntry POEntry2 = *pPOEntry2;
-
-    if (bLangIsEN)
-    {
-      POEntry1.msgStr.clear();
-      POEntry2.msgStr.clear();
-    }
-
-    if (!(POEntry1 == POEntry2))
-      return false;
-  }
-
-  for (size_t POEntryIdx = 0; POEntryIdx != pPOHandler1->GetClassEntriesCount(); POEntryIdx++)
-  {
-    const CPOEntry * POEntry1 = pPOHandler1->GetClassicPOEntryByIdx(POEntryIdx);
-    CPOEntry POEntryToFind = *POEntry1;
-    if (!pPOHandler2->LookforClassicEntry(POEntryToFind))
-      return false;
-  }
-  return true;
-}
-
 bool CHTTPHandler::CreateNewResource(std::string strResname, std::string strENPOFilePath, std::string strURL, size_t &stradded,
                                      std::string const &strURLENTransl)
 {
-  std::string strCacheFile = CacheFileNameFromURL(strURLENTransl);
+  CHTTPCachedItem temp = CHTTPCachedItem(strURLENTransl);
+  std::string strCacheFile = temp.LocalName;
   strCacheFile = m_strCacheDir + "PUT/" + strCacheFile;
 
   CURLcode curlResult;
 
   strURL = URLEncode(strURL);
-
+  if (m_bFakeUploads)
+  {
+      CLog::Log(logINFO, "CHTTPHandler::CreateNewResource faked with success for resource %s from EN PO file %s to URL %s",
+                strResname.c_str(), strENPOFilePath.c_str(), strURL.c_str());
+    return true;
+  }
   std::string strPO = g_File.ReadFileToStr(strENPOFilePath);
 
   std::string strPOJson = g_Json.CreateNewresJSONStrFromPOStr(strResname, strPO);
@@ -482,7 +457,7 @@ bool CHTTPHandler::CreateNewResource(std::string strResname, std::string strENPO
     {
       CLog::Log(logINFO, "CHTTPHandler::CreateNewResource finished with success for resource %s from EN PO file %s to URL %s",
                 strResname.c_str(), strENPOFilePath.c_str(), strURL.c_str());
-      g_File.CopyFile(strENPOFilePath, strCacheFile);
+      g_File.CpFile(strENPOFilePath, strCacheFile);
       g_Json.ParseUploadedStrForNewRes(strServerResp, stradded);
     }
     else
@@ -490,18 +465,61 @@ bool CHTTPHandler::CreateNewResource(std::string strResname, std::string strENPO
       CLog::Log(logINFO, "CHTTPHandler::CreateNewResource finished with error code %i, for resource %s from EN PO file %s to URL %s ",
                 http_code, strResname.c_str(), strENPOFilePath.c_str(), strURL.c_str());
     }
-    return http_code;
+    return true;
   }
   else
     CLog::Log(logERROR, "CHTTPHandler::CreateNewResource failed because Curl was not initalized");
-  return 700;
+  return false;
 };
 
 void CHTTPHandler::DeleteCachedFile (std::string const &strURL, std::string strPrefix)
 {
-  std::string strCacheFile = CacheFileNameFromURL(strURL);
+  CHTTPCachedItem temp = CHTTPCachedItem(strURL);
+  std::string strCacheFile = temp.LocalName;
 
   strCacheFile = m_strCacheDir + strPrefix + "/" + strCacheFile;
   if (g_File.FileExist(strCacheFile))
-    g_File.DeleteFile(strCacheFile);
+    g_File.DelFile(strCacheFile);
 }
+
+CHTTPCachedItem::CHTTPCachedItem(std::string url)
+{
+  URL = url;
+  LocalName = CacheFileNameFromURL(url);
+};
+
+CHTTPCachedItem::CHTTPCachedItem()
+{
+};
+
+std::string CHTTPCachedItem::CacheFileNameFromURL(std::string strURL)
+{
+  std::string strResult;
+  std::string strCharsToKeep  = "/.-=_() ";
+  std::string strReplaceChars = "/.-=_() ";
+
+  std::string hexChars = "01234567890abcdef"; 
+
+  for (std::string::iterator it = strURL.begin(); it != strURL.end(); it++)
+  {
+    if (isalnum(*it))
+      strResult += *it;
+    else
+    {
+      size_t pos = strCharsToKeep.find(*it);
+      if (pos != std::string::npos)
+        strResult += strReplaceChars[pos];
+      else
+      {
+        strResult += "%";
+        strResult += hexChars[(*it >> 4) & 0x0F];
+        strResult += hexChars[*it & 0x0F];
+      }
+    }
+  }
+
+  if (strResult.at(strResult.size()-1) == '/')
+    strResult[strResult.size()-1] = '-';
+
+  return strResult;
+};

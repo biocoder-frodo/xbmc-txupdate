@@ -27,9 +27,16 @@
 #include <fstream>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sstream>
 #include "../Log.h"
+#include <list>
+
+#ifdef _MSC_VER
+#include <Windows.h>
+#else
 #include <ftw.h>
 #include <unistd.h>
+#endif
 
 CFile g_File;
 
@@ -64,7 +71,10 @@ bool CFile::MakeOneDir(std::string Path)
 bool CFile::DirExists(std::string Path)
 {
   #ifdef _MSC_VER
-  return !(INVALID_FILE_ATTRIBUTES == GetFileAttributes(Path.c_str()) && GetLastError()==ERROR_FILE_NOT_FOUND);
+  if (Path.size() == 3 && Path.at(1) == ':') // we found a drive
+    return true;
+  DWORD dwAttrib = GetFileAttributes(Path.c_str());
+  return (dwAttrib != INVALID_FILE_ATTRIBUTES && (dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
   #else 
   struct stat st;
   return (stat(Path.c_str(), &st) == 0);
@@ -80,7 +90,7 @@ bool CFile::FileExist(std::string filename)
   return true;
 };
 
-void CFile::DeleteFile(std::string filename)
+void CFile::DelFile(std::string filename)
 {
   if (!FileExist(filename))
     return;
@@ -167,13 +177,13 @@ std::string CFile::GetCurrMonthText()
       case 10:  strTimeCleaned = "Oct"; break;
       case 11:  strTimeCleaned = "Nov"; break;
       case 12:  strTimeCleaned = "Dec"; break;
-      default: CLog::Log(logWARNING, "FileUtils::GetCurrMonthText: wrong month numer");
+      default: CLog::Log(logWARNING, "FileUtils::GetCurrMonthText: wrong month number");
     }
   }
   return strTimeCleaned;
 };
 
-void CFile::CopyFile(std::string strSourceFileName, std::string strDestFileName)
+void CFile::CpFile(std::string strSourceFileName, std::string strDestFileName)
 {
   ifstream source(strSourceFileName.c_str(), std::ios::binary);
   ofstream dest(strDestFileName.c_str(), std::ios::binary);
@@ -190,7 +200,7 @@ size_t CFile::GetFileAge(std::string strFileName)
   if (!stat(strFileName.c_str(), &b)) 
   {
     time_t now = std::time(0);
-    return now-b.st_mtime;
+    return static_cast<size_t>(now-b.st_mtime);
   }
   else
   {
@@ -208,7 +218,7 @@ std::string CFile::ReadFileToStr(std::string strFileName)
     CLog::Log(logERROR, "FileUtils: ReadFileToStr: unable to read file: %s", strFileName.c_str());
 
   fseek(file, 0, SEEK_END);
-  int64_t fileLength = ftell(file);
+  size_t fileLength = ftell(file);
   fseek(file, 0, SEEK_SET);
 
   strRead.resize(static_cast<size_t> (fileLength));
@@ -231,7 +241,7 @@ std::string CFile::ReadFileToStrE(std::string const &strFileName)
   return ReadFileToStr(strFileName);
 }
 
-bool CFile::WriteFileFromStr(const std::string &pofilename, std::string const &strToWrite)
+bool CFile::WriteFileFromStr(const std::string pofilename, std::string strToWrite)
 {
   std::string strDir = GetPath(pofilename);
   MakeDir(strDir);
@@ -292,7 +302,50 @@ int unlink_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW
   return rv;
 }
 
-int CFile::DeleteDirectory(std::string strDirPath)
+int CFile::DelDirectory(std::string strDirPath)
 {
+#ifdef _MSC_VER
+  return RemoveDirectory(strDirPath.c_str());
+#else
   return nftw(strDirPath.c_str(), unlink_cb, 64, FTW_DEPTH | FTW_PHYS);
+#endif
 }
+
+std::list<std::string> CFile::SubFolders(std::string strDirPath)
+{
+  std::list<std::string> subfolders;
+
+  DIR* Dir;
+  struct dirent *DirEntry;
+  Dir = opendir(strDirPath.c_str());
+
+  while(Dir && (DirEntry=readdir(Dir)))
+  {
+    if (DirEntry->d_type == DT_DIR && DirEntry->d_name[0] != '.')
+    {
+        subfolders.push_back(DirEntry->d_name);
+    }
+  }
+
+  return subfolders;
+}
+void CFile::AddToFilename (std::string &strFilename, std::string strAddendum)
+{
+  if (strAddendum.empty())
+    return;
+
+  if (strFilename.find_last_of(DirSepChar) != strFilename.size()-1)
+    strFilename += DirSepChar;
+  if (strAddendum.find_first_of(DirSepChar) == 0)
+    strAddendum = strAddendum.substr(1);
+  if (strAddendum.find_last_of(DirSepChar) == strAddendum.size()-1)
+    strAddendum = strAddendum.substr(0, strAddendum.size()-1);
+  strFilename += strAddendum;
+}
+
+std::string CFile::IntToStr(int number)
+{
+  std::stringstream ss;//create a stringstream
+  ss << number;//add number to the stream
+  return ss.str();//return a string with the contents of the stream
+};

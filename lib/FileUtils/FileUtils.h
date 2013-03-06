@@ -25,8 +25,9 @@
 #pragma once
 
 #include <string>
+#include <list>
 
-#ifdef WINDOWS
+#ifdef _MSC_VER
   #include <direct.h>
   #define GetCurrentDir _getcwd
 #else
@@ -36,7 +37,7 @@
 
 #ifdef _MSC_VER
 static const char DirSepChar = '\\';
-#include "dirent.h"
+#include "../../vc_project/dirent.h"
 #else
 static const char DirSepChar = '/';
 #include <dirent.h>
@@ -50,19 +51,22 @@ public:
   std::string GetPath(std::string const &strFilename);
   bool DirExists(std::string Path);
   bool FileExist(std::string filename);
-  void DeleteFile(std::string filename);
-  void CopyFile(std::string strSourceFileName, std::string strDestFileName);
+  void DelFile(std::string filename);
+  void CpFile(std::string strSourceFileName, std::string strDestFileName);
   size_t GetFileAge(std::string strFileName);
   std::string ReadFileToStr(std::string strFileName);
   std::string ReadFileToStrE(std::string const &strFileName);
-  bool WriteFileFromStr(const std::string &pofilename, std::string const &strToWrite);
+  bool WriteFileFromStr(const std::string pofilename, std::string const strToWrite);
   void ConvertStrLineEnds(std::string &strToConvert);
-  int DeleteDirectory(std::string strDirPath);
+  int DelDirectory(std::string strDirPath);
   std::string GetCurrTime();
   std::string GetCurrYear();
   std::string GetCurrMonth();
   std::string GetCurrDay();
   std::string GetCurrMonthText();
+  void AddToFilename (std::string &strFilename, std::string strAddendum);
+  std::string IntToStr(int number);
+  std::list<std::string> SubFolders(std::string strDirPath);
 };
 
 extern CFile g_File;

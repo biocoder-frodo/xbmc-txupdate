@@ -27,8 +27,6 @@
 #include <string>
 #include <stdio.h>
 #include <curl/curl.h>
-#include "TinyXML/tinyxml.h"
-#include "POHandler.h"
 
 struct CLoginData
 {
@@ -36,22 +34,43 @@ struct CLoginData
   std::string strPassword;
 };
 
+class CHTTPCachedItem
+{
+public:
+  CHTTPCachedItem(std::string URL);
+  CHTTPCachedItem();
+
+  std::string URL;
+  std::string LocalName; // local path below the CacheDir
+private:
+  std::string CacheFileNameFromURL(std::string strURL); //automatic localname by transforming source URL
+};
+
+enum HTTPCacheStore
+{
+  CACHE_DOWNLOAD,
+  CACHE_UPLOAD
+};
+
 class CHTTPHandler
 {
 public:
-  CHTTPHandler();
+  CHTTPHandler(bool fake_uploads);
   ~CHTTPHandler();
   void ReInit();
   std::string GetURLToSTR(std::string strURL, bool bSkiperror = false);
+  std::string GetURLToSTR(const CHTTPCachedItem &urlcached, bool bSkiperror = false);
   void Cleanup();
-  void SetCacheDir(std::string strCacheDir);
+  void SetCacheDir(std::string strCacheDir, size_t cache_expire_time_minutes);
   bool LoadCredentials (std::string CredentialsFilename);
-  bool PutFileToURL(std::string const &strFilePath, std::string const &strURL, bool &buploaded,
+  bool HaveCredentials ();
+  bool GetCachedPath(HTTPCacheStore store, const CHTTPCachedItem &urlcached, std::string &strPath);
+  bool PutFileToURL(std::string const &strFilePath, const CHTTPCachedItem &urlcached, bool &buploaded, bool POComparison,
                     size_t &stradded, size_t &strupd);
   bool CreateNewResource(std::string strResname, std::string strENPOFilePath, std::string strURL, size_t &stradded,
                          std::string const &strURLENTransl);
   void DeleteCachedFile(std::string const &strURL, std::string strPrefix);
-  bool ComparePOFilesInMem(CPOHandler * pPOHandler1, CPOHandler * pPOHandler2, bool bLangIsEN) const;
+//  bool ComparePOFilesInMem(CPOHandler * pPOHandler1, CPOHandler * pPOHandler2, bool bLangIsEN) const;
 
 private:
   CURL *m_curlHandle;
@@ -60,15 +79,17 @@ private:
   long curlPUTPOFileToURL(std::string const &strFilePath, std::string const &strURL, size_t &stradded, size_t &strupd);
 
   CLoginData GetCredentials (std::string strURL);
-  bool ComparePOFiles(std::string strPOFilePath1, std::string strPOFilePath2) const;
-  std::string CacheFileNameFromURL(std::string strURL);
+
+
   std::string URLEncode (std::string strURL);
   std::map<std::string, CLoginData> m_mapLoginData;
   std::map<std::string, CLoginData>::iterator itMapLoginData;
+  bool m_bFakeUploads;
+  size_t m_HTTPExpireTime;
 };
 
 size_t Write_CurlData_File(void *ptr, size_t size, size_t nmemb, FILE *stream);
 size_t Write_CurlData_String(char *data, size_t size, size_t nmemb, std::string *buffer);
 
-extern CHTTPHandler g_HTTPHandler;
+extern CHTTPHandler g_HTTPHandler; // supply one global HTTP handler
 #endif
