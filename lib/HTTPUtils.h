@@ -25,8 +25,10 @@
 #pragma once
 
 #include <string>
+#include <map>
 #include <stdio.h>
 #include <curl/curl.h>
+#include "POHandler.h"
 
 struct CLoginData
 {
@@ -65,12 +67,14 @@ public:
   bool LoadCredentials (std::string CredentialsFilename);
   bool HaveCredentials ();
   bool GetCachedPath(HTTPCacheStore store, const CHTTPCachedItem &urlcached, std::string &strPath);
-  bool PutFileToURL(std::string const &strFilePath, const CHTTPCachedItem &urlcached, bool &buploaded, bool POComparison,
-                    size_t &stradded, size_t &strupd);
+  bool PutFileToURL(std::string const &strFilePath, const CHTTPCachedItem &urlcached, bool &buploaded,
+                                size_t &stradded, size_t &strupd);
   bool CreateNewResource(std::string strResname, std::string strENPOFilePath, std::string strURL, size_t &stradded,
                          std::string const &strURLENTransl);
   void DeleteCachedFile(std::string const &strURL, std::string strPrefix);
-//  bool ComparePOFilesInMem(CPOHandler * pPOHandler1, CPOHandler * pPOHandler2, bool bLangIsEN) const;
+  bool ComparePOFilesInMem(CPOHandler * pPOHandler1, CPOHandler * pPOHandler2, bool bLangIsEN) const;
+  bool ComparePOFiles(std::string strPOFilePath1, std::string strPOFilePath2) const;
+  //bool ComparePOFilesInMem(CPOHandler * pPOHandler1, CPOHandler * pPOHandler2, bool bLangIsEN) const;
 
 private:
   CURL *m_curlHandle;

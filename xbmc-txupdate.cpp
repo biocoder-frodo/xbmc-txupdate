@@ -36,6 +36,8 @@
 #include "lib/xbmclangcodes.h"
 #include "lib/Settings.h"
 
+CHTTPHandler g_HTTPHandler = CHTTPHandler(true); // true = fake uploads
+
 using namespace std;
 
 void PrintUsage()
@@ -134,7 +136,7 @@ int main(int argc, char* argv[])
     CLog::Log(logINFO, "Root Directory: %s", WorkingDir.c_str());
 
     g_HTTPHandler.LoadCredentials(WorkingDir + ".passwords.xml");
-    g_HTTPHandler.SetCacheDir(WorkingDir + ".httpcache");
+    g_HTTPHandler.SetCacheDir(WorkingDir + ".httpcache", g_Settings.GetHTTPCacheExpire());
 
     CProjectHandler TXProject;
     TXProject.InitUpdateXMLHandler(WorkingDir);
@@ -145,8 +147,8 @@ int main(int argc, char* argv[])
       if (!g_File.FileExist(WorkingDir + ".httpcache" + DirSepChar + ".lastdloadtime") ||
           g_File.GetFileAge(WorkingDir + ".httpcache" + DirSepChar + ".lastdloadtime") > g_Settings.GetHTTPCacheExpire() * 60)
       {
-        g_File.DeleteDirectory(WorkingDir + ".httpcache"); // Clean the complete cache as all our files in there are outdated
-        g_HTTPHandler.SetCacheDir(WorkingDir + ".httpcache");
+        g_File.DelDirectory(WorkingDir + ".httpcache"); // Clean the complete cache as all our files in there are outdated
+        g_HTTPHandler.SetCacheDir(WorkingDir + ".httpcache", g_Settings.GetHTTPCacheExpire());
       }
 
       g_File.WriteFileFromStr(WorkingDir + ".httpcache" + DirSepChar + ".dload_merge_status", "fail");
@@ -201,7 +203,7 @@ int main(int argc, char* argv[])
         CLog::Log(logINFO, "********************************************");
 
         TXProject.WriteResourcesToFile(WorkingDir);
-        g_File.CopyFile(WorkingDir + "xbmc-txupdate.xml", WorkingDir + ".httpcache" + DirSepChar + ".last_xbmc-txupdate.xml");
+        g_File.CpFile(WorkingDir + "xbmc-txupdate.xml", WorkingDir + ".httpcache" + DirSepChar + ".last_xbmc-txupdate.xml");
       }
       g_File.WriteFileFromStr(WorkingDir + ".httpcache" + DirSepChar + ".dload_merge_status", "ok");
     }

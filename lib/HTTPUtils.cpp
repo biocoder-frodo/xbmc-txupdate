@@ -28,8 +28,53 @@
 #include <algorithm>
 #include "CTiXmlHelper.h"
 
+
 using namespace std;
 
+bool CHTTPHandler::ComparePOFiles(std::string strPOFilePath1, std::string strPOFilePath2) const
+{
+  CPOHandler POHandler1, POHandler2;
+  POHandler1.ParsePOStrToMem(g_File.ReadFileToStr(strPOFilePath1), strPOFilePath1);
+  POHandler2.ParsePOStrToMem(g_File.ReadFileToStr(strPOFilePath2), strPOFilePath2);
+  return ComparePOFilesInMem(&POHandler1, &POHandler2, false);
+}
+
+bool CHTTPHandler::ComparePOFilesInMem(CPOHandler * pPOHandler1, CPOHandler * pPOHandler2, bool bLangIsEN) const
+{
+  if (!pPOHandler1 || !pPOHandler2)
+    return false;
+  if (pPOHandler1->GetNumEntriesCount() != pPOHandler2->GetNumEntriesCount())
+    return false;
+  if (pPOHandler1->GetClassEntriesCount() != pPOHandler2->GetClassEntriesCount())
+    return false;
+
+  for (size_t POEntryIdx = 0; POEntryIdx != pPOHandler1->GetNumEntriesCount(); POEntryIdx++)
+  {
+    CPOEntry POEntry1 = *(pPOHandler1->GetNumPOEntryByIdx(POEntryIdx));
+    const CPOEntry * pPOEntry2 = pPOHandler2->GetNumPOEntryByID(POEntry1.numID);
+    if (!pPOEntry2)
+      return false;
+    CPOEntry POEntry2 = *pPOEntry2;
+
+    if (bLangIsEN)
+    {
+      POEntry1.msgStr.clear();
+      POEntry2.msgStr.clear();
+    }
+
+    if (!(POEntry1 == POEntry2))
+      return false;
+  }
+
+  for (size_t POEntryIdx = 0; POEntryIdx != pPOHandler1->GetClassEntriesCount(); POEntryIdx++)
+  {
+    const CPOEntry * POEntry1 = pPOHandler1->GetClassicPOEntryByIdx(POEntryIdx);
+    CPOEntry POEntryToFind = *POEntry1;
+    if (!pPOHandler2->LookforClassicEntry(POEntryToFind))
+      return false;
+  }
+  return true;
+}
 CHTTPHandler::CHTTPHandler(bool fake_uploads)
 {
   m_bFakeUploads = fake_uploads;
@@ -303,7 +348,7 @@ bool CHTTPHandler::GetCachedPath(HTTPCacheStore store, const CHTTPCachedItem &ur
   return g_File.FileExist(strPath);
 }
 
-bool CHTTPHandler::PutFileToURL(std::string const &strFilePath, const CHTTPCachedItem &urlcached, bool &buploaded, bool bPOComparison,
+bool CHTTPHandler::PutFileToURL(std::string const &strFilePath, const CHTTPCachedItem &urlcached, bool &buploaded,
                                 size_t &stradded, size_t &strupd)
 {
   std::string strCacheFile;

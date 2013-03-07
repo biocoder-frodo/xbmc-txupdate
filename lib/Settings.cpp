@@ -22,6 +22,7 @@
 #include "Settings.h"
 #include "HTTPUtils.h"
 #include "JSONHandler.h"
+#include "Log.h"
 
 CSettings g_Settings;
 

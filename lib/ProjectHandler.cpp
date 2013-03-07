@@ -100,7 +100,7 @@ bool CProjectHandler::WriteResourcesToFile(std::string strProjRootDir)
 
   strPrefixDir = g_Settings.GetMergedLangfilesDir();
   CLog::Log(logINFO, "Deleting merged language file directory");
-  g_File.DeleteDirectory(strProjRootDir + strPrefixDir);
+  g_File.DelDirectory(strProjRootDir + strPrefixDir);
   for (T_itmapRes itmapResources = m_mapResMerged.begin(); itmapResources != m_mapResMerged.end(); itmapResources++)
   {
     printf("Writing merged resources to HDD: %s\n", itmapResources->first.c_str());
@@ -114,7 +114,7 @@ bool CProjectHandler::WriteResourcesToFile(std::string strProjRootDir)
 
   strPrefixDir = g_Settings.GetTXUpdateLangfilesDir();
   CLog::Log(logINFO, "Deleting tx update language file directory");
-  g_File.DeleteDirectory(strProjRootDir + strPrefixDir);
+  g_File.DelDirectory(strProjRootDir + strPrefixDir);
   for (T_itmapRes itmapResources = m_mapResUpdateTX.begin(); itmapResources != m_mapResUpdateTX.end(); itmapResources++)
   {
     printf("Writing update TX resources to HDD: %s\n", itmapResources->first.c_str());
@@ -534,9 +534,11 @@ void CProjectHandler::UploadTXUpdateFiles(std::string strProjRootDir)
 
       bool buploaded = false;
       size_t stradded, strupd;
-      g_HTTPHandler.PutFileToURL(strFilePath, "https://www.transifex.com/api/2/project/" + g_Settings.GetProjectname() +
-                                              "/resource/" + XMLResdata.strTXResName + "/translation/" + strLangCode + "/",
-                                              buploaded, stradded, strupd);
+      
+      CHTTPCachedItem const upload = CHTTPCachedItem("https://www.transifex.com/api/2/project/" + g_Settings.GetProjectname() +
+                                              "/resource/" + XMLResdata.strTXResName + "/translation/" + strLangCode + "/");
+      
+      g_HTTPHandler.PutFileToURL(strFilePath, upload, buploaded, stradded, strupd);
       if (buploaded)
       {
         printf ("\tlangcode: %s:\t added strings:%i, updated strings:%i\n", it->c_str(), stradded, strupd);

@@ -42,6 +42,7 @@ lib/ProjectHandler.cpp \
 lib/UpdateXMLHandler.cpp \
 lib/AddonXMLHandler.cpp \
 lib/JSONHandler.cpp \
+lib/CTiXmlHelper.cpp \
 $(OUTPUT)
 
 OBJS := $(addsuffix .o,$(basename ${SRCS}))
@@ -74,7 +75,7 @@ HTTPUtils.o: HTTPUtils.h Log.h Log.cpp
 JSONHandler.o: JSONHandler.h JSONHandler.cpp
 Settings.o: Settings.h Settings.cpp
 AddonXMLHandler.cpp: AddonXMLHandler.h
-
+CTiXmlHelper.o: CTiXmlHelper.cpp CTiXmlHelper.h
 install:
 	install -m 755 xbmc-txupdate /usr/local/bin/
 uninstall:
