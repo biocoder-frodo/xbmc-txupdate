@@ -436,7 +436,7 @@ bool CAddonXMLHandler::LoadCoreVersion(std::string filename)
     return false;
 
   fseek(file, 0, SEEK_END);
-  int64_t fileLength = ftell(file);
+  long fileLength = ftell(file);
   fseek(file, 0, SEEK_SET);
 
   if (fileLength < 10)
@@ -448,7 +448,7 @@ bool CAddonXMLHandler::LoadCoreVersion(std::string filename)
 
   strBuffer.resize(fileLength+1);
 
-  unsigned int readBytes =  fread(&strBuffer[1], 1, fileLength, file);
+  size_t readBytes =  fread(&strBuffer[1], 1, fileLength, file);
   fclose(file);
 
   if (readBytes != fileLength)

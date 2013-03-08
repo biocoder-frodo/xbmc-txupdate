@@ -223,8 +223,8 @@ void CJSONHandler::ParseUploadedStrForNewRes(std::string const &strJSON, size_t 
     CLog::Log(logERROR, "JSONHandler::ParseUploadedStrForNewRes: Parse upload tx server response: no valid JSON data");
     return;
   }
-
-  stradded = root[0].asInt();
+  Json::Value::UInt index = 0;
+  stradded = root[index].asInt();
 
   return;
 };

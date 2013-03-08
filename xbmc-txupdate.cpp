@@ -20,7 +20,9 @@
  */
 
 #ifdef _MSC_VER
+#ifndef _CRT_SECURE_NO_WARNINGS
 #define _CRT_SECURE_NO_WARNINGS
+#endif
 #endif
 
 #if defined( WIN32 ) && defined( TUNE )
@@ -252,6 +254,6 @@ int main(int argc, char* argv[])
   {
     g_HTTPHandler.Cleanup();
     CLog::Close();
-    return 0;
+    return calcError;
   }
 }

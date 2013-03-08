@@ -41,9 +41,6 @@ bool CProjectHandler::FetchResourcesFromTransifex()
   if (strtemp.empty())
     CLog::Log(logERROR, "ProjectHandler::FetchResourcesFromTransifex: error getting resources from transifex.net");
 
-  char cstrtemp[strtemp.size()];
-  strcpy(cstrtemp, strtemp.c_str());
-
   std::list<std::string> listResourceNamesTX = g_Json.ParseResources(strtemp);
 
   CResourceHandler ResourceHandler;

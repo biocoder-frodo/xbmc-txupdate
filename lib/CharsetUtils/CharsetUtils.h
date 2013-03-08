@@ -27,7 +27,7 @@
 #include <string>
 #include <string.h>
 #ifdef _MSC_VER
-  #include "vc_project/libiconv/include/iconv.h"
+  #include "../../vc_project/libiconv/include/iconv.h"
 #else
   #include <iconv.h>
 #endif

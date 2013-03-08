@@ -26,6 +26,7 @@
 #include <sstream>
 #include <algorithm>
 
+
 CCharsetUtils g_CharsetUtils;
 
 std::string CCharsetUtils::IntToStr(int number)
@@ -187,7 +188,7 @@ std::string CCharsetUtils::stringCharsetToUtf8(const std::string& strCP, std::st
 
   char * pStrOut = &strOut[0];
   strIn  += '\x00';
-  char * pStrIn = &strIn[0];
+  const char * pStrIn = &strIn[0];
 
   iconv_value = iconv (conv_desc, &pStrIn, &lenStrIn, &pStrOut, &lenStrOut);
 

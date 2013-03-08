@@ -56,9 +56,6 @@ bool CResourceHandler::FetchPOFilesTXToMem(std::string strURL, bool bIsXBMCCore)
   if (strtemp.empty())
     CLog::Log(logERROR, "ResHandler::FetchPOFilesTXToMem: error getting po file list from transifex.net");
 
-  char cstrtemp[strtemp.size()];
-  strcpy(cstrtemp, strtemp.c_str());
-
   std::list<std::string> listLangsTX = g_Json.ParseAvailLanguagesTX(strtemp, bIsXBMCCore);
 
   CPOHandler POHandler;
@@ -138,9 +135,6 @@ bool CResourceHandler::FetchPOFilesUpstreamToMem(CXMLResdata XMLResdata, std::li
     std::string strtemp = g_HTTPHandler.GetURLToSTR(strGitHubURL);
     if (strtemp.empty())
       CLog::Log(logERROR, "ResHandler::FetchPOFilesTXToMem: error getting po file list from transifex.net");
-
-    char cstrtemp[strtemp.size()];
-    strcpy(cstrtemp, strtemp.c_str());
 
     listLangs = g_Json.ParseAvailLanguagesGITHUB(strtemp);
   }

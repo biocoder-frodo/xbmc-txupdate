@@ -26,7 +26,11 @@
 
 #include <string>
 #include <stdio.h>
+#ifdef _MSC_VER
+#include "Json-cpp/include/json/json.h"
+#else
 #include <jsoncpp/json/json.h>
+#endif
 #include <map>
 #include <list>
 #include "xbmclangcodes.h"
