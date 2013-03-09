@@ -188,7 +188,12 @@ std::string CCharsetUtils::stringCharsetToUtf8(const std::string& strCP, std::st
 
   char * pStrOut = &strOut[0];
   strIn  += '\x00';
-  const char * pStrIn = &strIn[0];
+
+// avoid need for -fpermissive
+#ifdef _MSC_VER
+  const 
+#endif
+  char * pStrIn = &strIn[0];
 
   iconv_value = iconv (conv_desc, &pStrIn, &lenStrIn, &pStrOut, &lenStrOut);
 
