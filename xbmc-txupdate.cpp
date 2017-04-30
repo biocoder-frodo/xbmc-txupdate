@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -49,7 +49,7 @@ void PrintUsage()
   "     -d   Only download to local cache, without performing a merge.\n"
   "     -dm  Download and create merged and tx update files, but no upload performed.\n"
   "     -dmu Download, merge and upload the new files to transifex.\n"
-  "     -u   Only upload the previously prepared files. Note that this needs downlad and merge ran before.\n\n"
+  "     -u   Only upload the previously prepared files. Note that this needs download and merge ran before.\n\n"
   "     No working mode arguments used, performs as -dm\n\n"
   );
   #ifdef _MSC_VER
@@ -122,7 +122,7 @@ int main(int argc, char* argv[])
   if (argc == 2)
     {bDownloadNeeded = true; bMergeNeeded = true;}
 
-  printf("\nXBMC-TXUPDATE v%s by Team XBMC\n", VERSION.c_str());
+  printf("\nXBMC-TXUPDATE v%s by Team Kodi\n", VERSION.c_str());
 
   try
   {
@@ -138,16 +138,18 @@ int main(int argc, char* argv[])
 
     CProjectHandler TXProject;
     TXProject.InitUpdateXMLHandler(WorkingDir);
-    g_LCodeHandler.Init("https://raw.github.com/transifex/transifex/master/transifex/languages/fixtures/all_languages.json");
+    g_LCodeHandler.Init("https://raw.github.com/xbmc/translations/master/tool/TXLanguages/all_languages.json");
+    g_LCodeHandler.ReadWhiteBlackLangList(WorkingDir + "langwhitelist.xml");
+    g_LCodeHandler.ReadWhiteBlackLangList(WorkingDir + "langblacklist.xml");
 
     if (bDownloadNeeded)
     {
-      if (!g_File.FileExist(WorkingDir + ".httpcache" + DirSepChar + ".lastdloadtime") ||
-          g_File.GetFileAge(WorkingDir + ".httpcache" + DirSepChar + ".lastdloadtime") > g_Settings.GetHTTPCacheExpire() * 60)
-      {
-        g_File.DeleteDirectory(WorkingDir + ".httpcache"); // Clean the complete cache as all our files in there are outdated
-        g_HTTPHandler.SetCacheDir(WorkingDir + ".httpcache");
-      }
+//      if (!g_File.FileExist(WorkingDir + ".httpcache" + DirSepChar + ".lastdloadtime") ||
+//          g_File.GetFileAge(WorkingDir + ".httpcache" + DirSepChar + ".lastdloadtime") > g_Settings.GetHTTPCacheExpire() * 60)
+//      {
+//        g_File.DeleteDirectory(WorkingDir + ".httpcache"); // Clean the complete cache as all our files in there are outdated
+//        g_HTTPHandler.SetCacheDir(WorkingDir + ".httpcache");
+//      }
 
       g_File.WriteFileFromStr(WorkingDir + ".httpcache" + DirSepChar + ".dload_merge_status", "fail");
       g_File.WriteFileFromStr(WorkingDir + ".httpcache" + DirSepChar + ".lastdloadtime", "Last download time: " + g_File.GetCurrTime());
@@ -214,7 +216,7 @@ int main(int argc, char* argv[])
 
       if (!bForceUpload && g_File.ReadFileToStrE(WorkingDir + ".httpcache" + DirSepChar + ".last_xbmc-txupdate.xml") !=
           g_File.ReadFileToStrE(WorkingDir + "xbmc-txupdate.xml"))
-        CLog::Log(logERROR, "xbmc-txupdate.xml file changed since last downlad and merge. Please (re)run download and merge.");
+        CLog::Log(logERROR, "xbmc-txupdate.xml file changed since last download and merge. Please (re)run download and merge.");
 
       printf("\n");
       printf("-----------------------------------------\n");
@@ -245,11 +247,12 @@ int main(int argc, char* argv[])
 
     CLog::Close();
     g_HTTPHandler.Cleanup();
+    return 0;
   }
   catch (const int calcError)
   {
     g_HTTPHandler.Cleanup();
     CLog::Close();
-    return 0;
+    return 100;
   }
 }

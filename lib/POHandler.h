@@ -1,5 +1,6 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
+ * 
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +14,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -61,6 +62,7 @@ public:
   size_t const GetClassEntriesCount() {return m_vecClassicEntries.size();}
   size_t const GetCommntEntriesCount() {return m_CommsCntr;}
   void SetIfIsEnglish(bool bIsENLang) {m_bPOIsEnglish = bIsENLang;}
+  void SetIfPOIsUpdTX(bool bIsUpdTX) {m_bPOIsUpdateTX = bIsUpdTX;}
   bool GetIfSourceIsXML () {return m_bIsXMLSource;}
 
 protected:
@@ -69,6 +71,8 @@ protected:
   itStrings IterateToMapIndex(itStrings it, size_t index);
   bool GetXMLEncoding(const TiXmlDocument* pDoc, std::string& strEncoding);
   void GetXMLComment(std::string strXMLEncoding, const TiXmlNode *pCommentNode, CPOEntry &currEntry);
+  int GetPluralNumOfVec(std::vector<std::string> &vecPluralStrings);
+  void ParsePOHeader();
 
   std::string m_strHeader;
   std::string m_strLangCode;
@@ -81,4 +85,5 @@ protected:
   bool m_bIsXMLSource;
   size_t m_CommsCntr;
   bool m_bPOIsEnglish;
+  bool m_bPOIsUpdateTX;
 };

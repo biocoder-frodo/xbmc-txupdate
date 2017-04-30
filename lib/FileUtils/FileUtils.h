@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team XBMC
  *      http://xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -25,6 +25,7 @@
 #pragma once
 
 #include <string>
+#include <ctime>
 
 #ifdef WINDOWS
   #include <direct.h>
@@ -63,6 +64,9 @@ public:
   std::string GetCurrMonth();
   std::string GetCurrDay();
   std::string GetCurrMonthText();
+  time_t GetFileAgeFromFile(std::string strFileName);
+  bool WriteFileAgeToFile(std::string strFileName, time_t FileAgeTime);
+  void WriteNowToFileAgeFile(std::string strFileName);
 };
 
 extern CFile g_File;

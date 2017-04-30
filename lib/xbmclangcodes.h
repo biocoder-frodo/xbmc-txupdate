@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2005-2008 Team XBMC
+ *      Copyright (C) 2005-2014 Team Kodi
  *      http://xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -26,6 +26,7 @@
 
 #include <string>
 #include <map>
+#include <list>
 
 struct CLangcodes
 {
@@ -46,11 +47,16 @@ public:
   int GetnPlurals(std::string LangToLook);
   std::string GetPlurForm(std::string LangToLook);
   std::string VerifyLangCode(std::string LangCode);
+  void ReadWhiteBlackLangList (std::string strPath);
+  bool CheckIfLangCodeBlacklisted (std::string strLcode);
+  bool CheckIfLangBlacklisted (std::string strLang);
 private:
   std::map <std::string, CLangcodes> m_mapLCodes;
   std::map <std::string, CLangcodes>::iterator itmapLCodes;
   std::string FindCustomLangCode(std::string LangToLook);
   std::string FindCustomLang(std::string LangCode);
+  std::map<std::string, std::string>  m_BlackList;  // contains langcodes and langnames of non-derivated languages to be blacklisted
+  std::map<std::string, std::string>  m_WhiteList;  // contains langcodes and langnames of derivated languages to be whitelisted (by default it is not alowed)
 };
 
 extern CLCodeHandler g_LCodeHandler;

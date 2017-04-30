@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -104,6 +104,21 @@ bool CProjectHandler::WriteResourcesToFile(std::string strProjRootDir)
   for (T_itmapRes itmapResources = m_mapResMerged.begin(); itmapResources != m_mapResMerged.end(); itmapResources++)
   {
     printf("Writing merged resources to HDD: %s\n", itmapResources->first.c_str());
+    std::list<std::string> lChangedLangsFromUpstream = m_mapResMerged[itmapResources->first].GetChangedLangsFromUpstream();
+    std::list<std::string> lChangedAddXMLLangsFromUpstream = m_mapResMerged[itmapResources->first].GetChangedLangsInAddXMLFromUpstream();
+    if (!lChangedAddXMLLangsFromUpstream.empty())
+    {
+      printf("    Changed Langs in addon.xml file from upstream: ");
+      PrintChangedLangs(lChangedAddXMLLangsFromUpstream);
+      printf("\n");
+    }
+    if (!lChangedLangsFromUpstream.empty())
+    {
+      printf("    Changed Langs in strings files from upstream: ");
+      PrintChangedLangs(lChangedLangsFromUpstream);
+      printf ("\n");
+    }
+
     CLog::Log(logLINEFEED, "");
     CLog::Log(logINFO, "ProjHandler: *** Write Merged Resource: %s ***", itmapResources->first.c_str());
     CLog::IncIdent(4);
@@ -111,6 +126,7 @@ bool CProjectHandler::WriteResourcesToFile(std::string strProjRootDir)
     m_mapResMerged[itmapResources->first].WritePOToFiles (strProjRootDir, strPrefixDir, itmapResources->first, XMLResdata, false);
     CLog::DecIdent(4);
   }
+  printf ("\n\n");
 
   strPrefixDir = g_Settings.GetTXUpdateLangfilesDir();
   CLog::Log(logINFO, "Deleting tx update language file directory");
@@ -146,6 +162,7 @@ bool CProjectHandler::CreateMergedResources()
     CLog::IncIdent(4);
 
     CResourceHandler mergedResHandler, updTXResHandler;
+    std::list<std::string> lAddXMLLangsChgedFromUpstream, lLangsChgedFromUpstream;
 
     // Get available pretext for Resource Header. we use the upstream one
     std::string strResPreHeader;
@@ -162,6 +179,7 @@ bool CProjectHandler::CreateMergedResources()
       mergedResHandler.GetXMLHandler()->SetAddonVersion(m_mapResourcesUpstr[*itResAvail].GetXMLHandler()->GetAddonVersion());
       mergedResHandler.GetXMLHandler()->SetAddonChangelogFile(m_mapResourcesUpstr[*itResAvail].GetXMLHandler()->GetAddonChangelogFile());
       mergedResHandler.GetXMLHandler()->SetAddonLogFilename(m_mapResourcesUpstr[*itResAvail].GetXMLHandler()->GetAddonLogFilename());
+      mergedResHandler.GetXMLHandler()->SetAddonMetadata(m_mapResourcesUpstr[*itResAvail].GetXMLHandler()->GetAddonMetaData());
       updTXResHandler.GetXMLHandler()->SetStrAddonXMLFile(m_mapResourcesUpstr[*itResAvail].GetXMLHandler()->GetStrAddonXMLFile());
       updTXResHandler.GetXMLHandler()->SetAddonVersion(m_mapResourcesUpstr[*itResAvail].GetXMLHandler()->GetAddonVersion());
       updTXResHandler.GetXMLHandler()->SetAddonChangelogFile(m_mapResourcesUpstr[*itResAvail].GetXMLHandler()->GetAddonChangelogFile());
@@ -181,22 +199,33 @@ bool CProjectHandler::CreateMergedResources()
       CPOHandler mergedPOHandler, updTXPOHandler;
       const CPOEntry* pPOEntryTX;
       const CPOEntry* pPOEntryUpstr;
+      bool bResChangedInAddXMLFromUpstream = false; bool bResChangedFromUpstream = false;
 
       mergedPOHandler.SetIfIsEnglish(strLangCode == "en");
       updTXPOHandler.SetIfIsEnglish(strLangCode == "en");
+      updTXPOHandler.SetIfPOIsUpdTX(true);
 
       CAddonXMLEntry MergedAddonXMLEntry, MergedAddonXMLEntryTX;
       CAddonXMLEntry * pAddonXMLEntry;
+
+      // Get addon.xml file translatable strings from Transifex to the merged Entry
       if (m_mapResourcesTX.find(*itResAvail) != m_mapResourcesTX.end() && m_mapResourcesTX[*itResAvail].GetPOData(*itlang))
       {
         CAddonXMLEntry AddonXMLEntryInPO, AddonENXMLEntryInPO;
         m_mapResourcesTX[*itResAvail].GetPOData(*itlang)->GetAddonMetaData(AddonXMLEntryInPO, AddonENXMLEntryInPO);
-        MergeAddonXMLEntry(AddonXMLEntryInPO, MergedAddonXMLEntry, *pENAddonXMLEntry, AddonENXMLEntryInPO);
+        MergeAddonXMLEntry(AddonXMLEntryInPO, MergedAddonXMLEntry, *pENAddonXMLEntry, AddonENXMLEntryInPO, false,
+                           bResChangedInAddXMLFromUpstream);
       }
+      // Save these strings from Transifex for later use
       MergedAddonXMLEntryTX = MergedAddonXMLEntry;
+
+      // Get the addon.xml file translatable strings from upstream merged into the merged entry
       if ((pAddonXMLEntry = GetAddonDataFromXML(&m_mapResourcesUpstr, *itResAvail, *itlang)) != NULL)
         MergeAddonXMLEntry(*pAddonXMLEntry, MergedAddonXMLEntry, *pENAddonXMLEntry,
-                           *GetAddonDataFromXML(&m_mapResourcesUpstr, *itResAvail, "en"));
+                           *GetAddonDataFromXML(&m_mapResourcesUpstr, *itResAvail, "en"), true, bResChangedInAddXMLFromUpstream);
+      else if (!MergedAddonXMLEntryTX.strDescription.empty() || !MergedAddonXMLEntryTX.strSummary.empty() ||
+               !MergedAddonXMLEntryTX.strDisclaimer.empty())
+        bResChangedInAddXMLFromUpstream = true;
 
       if (*itResAvail != "xbmc.core")
       {
@@ -218,35 +247,58 @@ bool CProjectHandler::CreateMergedResources()
 
         CheckPOEntrySyntax(pPOEntryTX, strLangCode, pcurrPOEntryEN);
 
-        if (strLangCode == "en")
+        if (strLangCode == "en") // English entry
         {
           mergedPOHandler.AddNumPOEntryByID(numID, *pcurrPOEntryEN, *pcurrPOEntryEN, true);
           updTXPOHandler.AddNumPOEntryByID(numID, *pcurrPOEntryEN, *pcurrPOEntryEN, true);
         }
-
-        if (strLangCode != "en" && pPOEntryTX && ((pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryTX->msgStr.empty())
-          || (!pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryTX->msgStrPlural.empty())))
+        //1. Tx entry single
+        else if (pPOEntryTX && pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryTX->msgStr.empty() &&
+                 pPOEntryTX->msgID == pcurrPOEntryEN->msgID)
+        {
           mergedPOHandler.AddNumPOEntryByID(numID, *pPOEntryTX, *pcurrPOEntryEN, true);
-        else if (strLangCode != "en" && pPOEntryUpstr && ((pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryUpstr->msgStr.empty())
-          || (!pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryUpstr->msgStrPlural.empty())))
+          if (g_Settings.GetForceTXUpdate())
+            updTXPOHandler.AddNumPOEntryByID(numID, *pPOEntryTX, *pcurrPOEntryEN, true);
+          //Check if the string is new on TX or changed from the upstream one -> Addon version bump later
+          if ((!pPOEntryUpstr || pPOEntryUpstr->msgStr.empty() ||
+              (!pPOEntryUpstr->msgID.empty() && pPOEntryUpstr->msgID != pcurrPOEntryEN->msgID)) &&
+              (!pPOEntryUpstr || pPOEntryUpstr->msgStr != pPOEntryTX->msgStr))
+              bResChangedFromUpstream = true;
+        }
+        //2. Tx entry plural
+        else if (pPOEntryTX && !pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryTX->msgStrPlural.empty() &&
+                 pPOEntryTX->msgIDPlur == pcurrPOEntryEN->msgIDPlur)
+        {
+          mergedPOHandler.AddNumPOEntryByID(numID, *pPOEntryTX, *pcurrPOEntryEN, true);
+          if (g_Settings.GetForceTXUpdate())
+            updTXPOHandler.AddNumPOEntryByID(numID, *pPOEntryTX, *pcurrPOEntryEN, true);
+          //Check if the string is new on TX or changed from the upstream one -> Addon version bump later
+          if ((!pPOEntryUpstr || pPOEntryUpstr->msgStrPlural.empty() ||
+              (!pPOEntryUpstr->msgID.empty() && pPOEntryUpstr->msgID != pcurrPOEntryEN->msgID)) &&
+              (!pPOEntryUpstr || pPOEntryUpstr->msgStrPlural != pPOEntryTX->msgStrPlural))
+              bResChangedFromUpstream = true;
+        }
+        //3. Upstr entry single
+        else if (pPOEntryUpstr && pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryUpstr->msgStr.empty() &&
+                (pPOEntryUpstr->msgID.empty() || pPOEntryUpstr->msgID == pcurrPOEntryEN->msgID)) //if it is empty it is from a strings.xml file
         {
           mergedPOHandler.AddNumPOEntryByID(numID, *pPOEntryUpstr, *pcurrPOEntryEN, true);
           updTXPOHandler.AddNumPOEntryByID(numID, *pPOEntryUpstr, *pcurrPOEntryEN, false);
         }
-        else if (strLangCode != "en" && pPOEntryUpstr && pPOEntryUpstr->msgID.empty() && !pPOEntryUpstr->msgStr.empty())
+        //4. Upstr entry plural
+        else if (pPOEntryUpstr && !pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryUpstr->msgStrPlural.empty() &&
+                 pPOEntryUpstr->msgIDPlur == pcurrPOEntryEN->msgIDPlur)
         {
-          mergedPOHandler.AddNumPOEntryByID(numID, *pPOEntryUpstr, *pcurrPOEntryEN, true); // we got this entry from a strings.xml file
+          mergedPOHandler.AddNumPOEntryByID(numID, *pPOEntryUpstr, *pcurrPOEntryEN, true);
           updTXPOHandler.AddNumPOEntryByID(numID, *pPOEntryUpstr, *pcurrPOEntryEN, false);
         }
-// We don't add untranslated entries to the non-English PO files
-//        else if (strLangCode != "en")
-//          mergedPOHandler.AddNumPOEntryByID(numID, *pcurrPOEntryEN, *pcurrPOEntryEN, true);
+
       }
 
 
-      
-      
-      
+
+
+      // Handle classic non-id based po entries
       for (size_t POEntryIdx = 0; pcurrPOHandlerEN && POEntryIdx != pcurrPOHandlerEN->GetClassEntriesCount(); POEntryIdx++)
       {
 
@@ -264,21 +316,48 @@ bool CProjectHandler::CreateMergedResources()
           mergedPOHandler.AddClassicEntry(*pcurrPOEntryEN, *pcurrPOEntryEN, true);
           updTXPOHandler.AddClassicEntry(*pcurrPOEntryEN, *pcurrPOEntryEN, true);
         }
-
-        if (strLangCode != "en" && pPOEntryTX && ((pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryTX->msgStr.empty())
-                                               || (!pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryTX->msgStrPlural.empty())))
+        else if (pPOEntryTX && pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryTX->msgStr.empty()) // Tx entry single
+        {
           mergedPOHandler.AddClassicEntry(*pPOEntryTX, *pcurrPOEntryEN, true);
-        else if (strLangCode != "en" && pPOEntryUpstr && ((pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryUpstr->msgStr.empty())
-                                   || (!pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryUpstr->msgStrPlural.empty())))
+          if (g_Settings.GetForceTXUpdate())
+            updTXPOHandler.AddClassicEntry(*pPOEntryTX, *pcurrPOEntryEN, true);
+          //Check if the string is new on TX or changed from the upstream one -> Addon version bump later
+          if (!pPOEntryUpstr || pPOEntryUpstr->msgStr.empty())
+          {
+            CPOEntry POEntryToCompare = *pPOEntryTX;
+            POEntryToCompare.msgIDPlur.clear();
+            POEntryToCompare.Type = 0;
+            if (!pPOEntryUpstr || !(*pPOEntryUpstr == POEntryToCompare))
+              bResChangedFromUpstream = true;
+          }
+        }
+        else if (pPOEntryTX && !pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryTX->msgStrPlural.empty()) // Tx entry plural
+        {
+          mergedPOHandler.AddClassicEntry(*pPOEntryTX, *pcurrPOEntryEN, true);
+          if (g_Settings.GetForceTXUpdate())
+            updTXPOHandler.AddClassicEntry(*pPOEntryTX, *pcurrPOEntryEN, true);
+          //Check if the string is new on TX or changed from the upstream one -> Addon version bump later
+          if (!pPOEntryUpstr || pPOEntryUpstr->msgStrPlural.empty())
+          {
+            CPOEntry POEntryToCompare = *pPOEntryTX;
+            POEntryToCompare.msgID.clear();
+            POEntryToCompare.Type = 0;
+            if (!pPOEntryUpstr || !(*pPOEntryUpstr == POEntryToCompare))
+              bResChangedFromUpstream = true;
+          }
+        }
+        else if (pPOEntryUpstr && pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryUpstr->msgStr.empty()) // Upstr entry single
         {
           mergedPOHandler.AddClassicEntry(*pPOEntryUpstr, *pcurrPOEntryEN, true);
           updTXPOHandler.AddClassicEntry(*pPOEntryUpstr, *pcurrPOEntryEN, false);
         }
-
+        else if (pPOEntryUpstr && !pcurrPOEntryEN->msgIDPlur.empty() && !pPOEntryUpstr->msgStrPlural.empty()) // Upstr entry plural
+        {
+          mergedPOHandler.AddClassicEntry(*pPOEntryUpstr, *pcurrPOEntryEN, true);
+          updTXPOHandler.AddClassicEntry(*pPOEntryUpstr, *pcurrPOEntryEN, false);
+        }
       }
-      
-      
-      
+
       CPOHandler * pPOHandlerTX;
       pPOHandlerTX = SafeGetPOHandler(m_mapResourcesTX, *itResAvail, strLangCode);
 
@@ -290,7 +369,8 @@ bool CProjectHandler::CreateMergedResources()
       }
 
       if ((updTXPOHandler.GetNumEntriesCount() !=0 || updTXPOHandler.GetClassEntriesCount() !=0) &&
-        (strLangCode != "en" || !g_HTTPHandler.ComparePOFilesInMem(&updTXPOHandler, pPOHandlerTX, strLangCode == "en")))
+        (strLangCode != "en" || g_Settings.GetForceTXUpdate() ||
+        !g_HTTPHandler.ComparePOFilesInMem(&updTXPOHandler, pPOHandlerTX, strLangCode == "en")))
       {
         updTXPOHandler.SetPreHeader(strResPreHeader);
         updTXPOHandler.SetHeaderNEW(*itlang);
@@ -300,11 +380,19 @@ bool CProjectHandler::CreateMergedResources()
       CLog::LogTable(logINFO, "merged", "\t\t\t%s\t\t%i\t\t%i\t\t%i\t\t%i", strLangCode.c_str(), mergedPOHandler.GetNumEntriesCount(),
                      mergedPOHandler.GetClassEntriesCount(), updTXPOHandler.GetNumEntriesCount(), updTXPOHandler.GetClassEntriesCount());
 
+     //store what languages changed from upstream in strings.po and addon.xml files
+     if (bResChangedFromUpstream)
+       lLangsChgedFromUpstream.push_back(strLangCode);
+     if (bResChangedInAddXMLFromUpstream)
+       lAddXMLLangsChgedFromUpstream.push_back(strLangCode);
     }
     CLog::LogTable(logADDTABLEHEADER, "merged", "--------------------------------------------------------------------------------------------\n");
     CLog::LogTable(logADDTABLEHEADER, "merged", "MergedPOHandler:\tLang\t\tmergedID\tmergedClass\tupdID\t\tupdClass\n");
     CLog::LogTable(logADDTABLEHEADER, "merged", "--------------------------------------------------------------------------------------------\n");
     CLog::LogTable(logCLOSETABLE, "merged",   "");
+
+    mergedResHandler.SetChangedLangsFromUpstream(lLangsChgedFromUpstream);
+    mergedResHandler.SetChangedLangsInAddXMLFromUpstream(lAddXMLLangsChgedFromUpstream);
 
     if (mergedResHandler.GetLangsCount() != 0 || !mergedResHandler.GetXMLHandler()->GetMapAddonXMLData()->empty())
       m_mapResMerged[*itResAvail] = mergedResHandler;
@@ -422,19 +510,38 @@ CPOHandler * CProjectHandler::SafeGetPOHandler(std::map<std::string, CResourceHa
 }
 
 void CProjectHandler::MergeAddonXMLEntry(CAddonXMLEntry const &EntryToMerge, CAddonXMLEntry &MergedAddonXMLEntry,
-                                         CAddonXMLEntry const &SourceENEntry, CAddonXMLEntry const &CurrENEntry)
+                                         CAddonXMLEntry const &SourceENEntry, CAddonXMLEntry const &CurrENEntry, bool UpstrToMerge,
+                                         bool &bResChangedFromUpstream)
 {
   if (!EntryToMerge.strDescription.empty() && MergedAddonXMLEntry.strDescription.empty() &&
       CurrENEntry.strDescription == SourceENEntry.strDescription)
     MergedAddonXMLEntry.strDescription = EntryToMerge.strDescription;
+  else if (UpstrToMerge && !MergedAddonXMLEntry.strDescription.empty() &&
+           EntryToMerge.strDescription != MergedAddonXMLEntry.strDescription &&
+           CurrENEntry.strDescription == SourceENEntry.strDescription)
+  {
+    bResChangedFromUpstream = true;
+  }
 
   if (!EntryToMerge.strDisclaimer.empty() && MergedAddonXMLEntry.strDisclaimer.empty() &&
-    CurrENEntry.strDisclaimer == SourceENEntry.strDisclaimer)
+      CurrENEntry.strDisclaimer == SourceENEntry.strDisclaimer)
     MergedAddonXMLEntry.strDisclaimer = EntryToMerge.strDisclaimer;
+  else if (UpstrToMerge && !MergedAddonXMLEntry.strDisclaimer.empty() &&
+           EntryToMerge.strDisclaimer != MergedAddonXMLEntry.strDisclaimer &&
+           CurrENEntry.strDisclaimer == SourceENEntry.strDisclaimer)
+  {
+    bResChangedFromUpstream = true;
+  }
 
   if (!EntryToMerge.strSummary.empty() && MergedAddonXMLEntry.strSummary.empty() &&
-    CurrENEntry.strSummary == SourceENEntry.strSummary)
+      CurrENEntry.strSummary == SourceENEntry.strSummary)
     MergedAddonXMLEntry.strSummary = EntryToMerge.strSummary;
+    else if (UpstrToMerge && !MergedAddonXMLEntry.strSummary.empty() &&
+           EntryToMerge.strSummary != MergedAddonXMLEntry.strSummary &&
+           CurrENEntry.strSummary == SourceENEntry.strSummary)
+  {
+    bResChangedFromUpstream = true;
+  }
 }
 
 void CProjectHandler::InitUpdateXMLHandler(std::string strProjRootDir)
@@ -505,7 +612,7 @@ void CProjectHandler::UploadTXUpdateFiles(std::string strProjRootDir)
 
       CLog::Log(logINFO, "CProjectHandler::UploadTXUpdateFiles: Resource %s was succesfully created with %i English strings.",
                 itres->first.c_str(), straddednew);
-      printf (", newly created on Transifex with %i English strings.\n", straddednew);
+      printf (", newly created on Transifex with %lu English strings.\n", straddednew);
 
       g_HTTPHandler.Cleanup();
       g_HTTPHandler.ReInit();
@@ -534,12 +641,17 @@ void CProjectHandler::UploadTXUpdateFiles(std::string strProjRootDir)
 
       bool buploaded = false;
       size_t stradded, strupd;
-      g_HTTPHandler.PutFileToURL(strFilePath, "https://www.transifex.com/api/2/project/" + g_Settings.GetProjectname() +
-                                              "/resource/" + XMLResdata.strTXResName + "/translation/" + strLangCode + "/",
-                                              buploaded, stradded, strupd);
+      if (*it == "en")
+        g_HTTPHandler.PutFileToURL(strFilePath, "https://www.transifex.com/api/2/project/" + g_Settings.GetProjectname() +
+                                                "/resource/" + XMLResdata.strTXResName + "/content/",
+                                                buploaded, stradded, strupd);
+      else
+        g_HTTPHandler.PutFileToURL(strFilePath, "https://www.transifex.com/api/2/project/" + g_Settings.GetProjectname() +
+                                                "/resource/" + XMLResdata.strTXResName + "/translation/" + strLangCode + "/",
+                                                buploaded, stradded, strupd);
       if (buploaded)
       {
-        printf ("\tlangcode: %s:\t added strings:%i, updated strings:%i\n", it->c_str(), stradded, strupd);
+        printf ("\tlangcode: %s:\t added strings:%lu, updated strings:%lu\n", it->c_str(), stradded, strupd);
         g_HTTPHandler.DeleteCachedFile("https://www.transifex.com/api/2/project/" + g_Settings.GetProjectname() +
                                        "/resource/" + strResname + "/stats/", "GET");
         g_HTTPHandler.DeleteCachedFile("https://www.transifex.com/api/2/project/" + g_Settings.GetProjectname() +
@@ -643,5 +755,21 @@ void CProjectHandler::CheckCharCount(const CPOEntry * pPOEntry, std::string cons
           CLog::SyntaxLog(logWARNING, "Warning: count missmatch of char \"%s\"%s",
                           g_CharsetUtils.EscapeStringCPP(g_CharsetUtils.ChrToStr(chrToCheck)).c_str(), GetEntryContent(pPOEntry, strLangCode).c_str());
       }
+  }
+}
+
+void CProjectHandler::PrintChangedLangs(std::list<std::string> lChangedLangs)
+{
+  std::list<std::string>::iterator itLangs;
+  std::size_t counter = 0;
+  for (itLangs = lChangedLangs.begin() ; itLangs != lChangedLangs.end(); itLangs++)
+  {
+    printf ("%s ", itLangs->c_str());
+    counter++;
+    if (counter > 19)
+    {
+      printf ("+ %i langs ", lChangedLangs.size() - 20);
+      break;
+    }
   }
 }

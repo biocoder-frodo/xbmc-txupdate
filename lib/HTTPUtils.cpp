@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -26,6 +26,8 @@
 #include <cctype>
 #include "Settings.h"
 #include "JSONHandler.h"
+#include "Fileversioning.h"
+
 
 CHTTPHandler g_HTTPHandler;
 
@@ -41,62 +43,125 @@ CHTTPHandler::~CHTTPHandler()
   Cleanup();
 };
 
-std::string CHTTPHandler::GetURLToSTR(std::string strURL, bool bSkiperror /*=false*/)
+std::string CHTTPHandler::GetHTTPErrorFromCode(int http_code)
+{
+  if (http_code == 503) return ": Service Unavailable (probably TX server maintenance) please try later.";
+  else if (http_code == 400) return ": Bad request (probably an error in the utility or the API changed. Please contact the Developer.";
+  else if (http_code == 401) return ": Unauthorized. Please create a .passwords file in the project root dir with credentials.";
+  else if (http_code == 403) return ": Forbidden. Service is currently forbidden.";
+  else if (http_code == 404) return ": File not found on the URL.";
+  else if (http_code == 500) return ": Internal server error. Try again later, or contact the Utility Developer.";
+  return "";
+}
+
+void CHTTPHandler::HTTPRetry(int nretry)
+{
+  for (int i = 0; i < nretry*6; i++)
+  {
+    printf (" Retry %i: %i  \b\b\b\b\b\b\b\b\b\b\b\b\b", nretry, nretry*6-i);
+    if (nretry*6-i > 9)
+      printf("\b");
+    usleep(300000);
+  }
+  printf ("             \b\b\b\b\b\b\b\b\b\b\b\b\b");
+  g_HTTPHandler.Cleanup();
+  g_HTTPHandler.ReInit();
+}
+
+std::string CHTTPHandler::GetURLToSTR(std::string strURL)
 {
   std::string strBuffer;
   std::string strCacheFile = CacheFileNameFromURL(strURL);
   strCacheFile = m_strCacheDir + "GET/" + strCacheFile;
 
-  if (!g_File.FileExist(strCacheFile) || g_File.GetFileAge(strCacheFile) > g_Settings.GetHTTPCacheExpire() * 60)
+  bool bCacheFileExists = g_File.FileExist(strCacheFile);
+
+  size_t CacheFileAge = bCacheFileExists ? g_File.GetFileAge(strCacheFile): -1; //in seconds
+  size_t MaxCacheFileAge = g_Settings.GetHTTPCacheExpire() * 60; // in seconds
+
+  bool bCacheFileExpired = CacheFileAge > MaxCacheFileAge;
+
+  std::string strCachedFileVersion, strWebFileVersion;
+  strWebFileVersion = g_Fileversion.GetVersionForURL(strURL);
+
+
+  if (strWebFileVersion != "" && g_File.FileExist(strCacheFile + ".version"))
+    strCachedFileVersion = g_File.ReadFileToStr(strCacheFile + ".version");
+
+  bool bFileChangedOnWeb = strCachedFileVersion != strWebFileVersion;
+
+  if (!bCacheFileExists || (bCacheFileExpired && (strWebFileVersion == "" || bFileChangedOnWeb)))
   {
-    long result = curlURLToCache(strCacheFile, strURL, bSkiperror, strBuffer);
+    printf("*");
+    g_File.DeleteFile(strCacheFile + ".version");
+    g_File.DeleteFile(strCacheFile + ".time");
+
+    long result = curlURLToCache(strCacheFile, strURL, strBuffer);
     if (result < 200 || result >= 400)
       return "";
+
+    if (strWebFileVersion != "")
+      g_File.WriteFileFromStr(strCacheFile + ".version", strWebFileVersion);
+
+    g_File.WriteNowToFileAgeFile(strCacheFile);
   }
   else
+  {
     strBuffer = g_File.ReadFileToStr(strCacheFile);
+    printf (bCacheFileExpired?"-":".");
+  }
 
   return strBuffer;
 };
 
-long CHTTPHandler::curlURLToCache(std::string strCacheFile, std::string strURL, bool bSkiperror, std::string &strBuffer)
+long CHTTPHandler::curlURLToCache(std::string strCacheFile, std::string strURL, std::string &strBuffer)
 {
   CURLcode curlResult;
-  strBuffer.clear();
-
   strURL = URLEncode(strURL);
 
   CLoginData LoginData = GetCredentials(strURL);
 
     if(m_curlHandle) 
     {
-      curl_easy_setopt(m_curlHandle, CURLOPT_URL, strURL.c_str());
-      curl_easy_setopt(m_curlHandle, CURLOPT_WRITEFUNCTION, Write_CurlData_String);
-      if (!LoginData.strLogin.empty())
-      {
-        curl_easy_setopt(m_curlHandle, CURLOPT_USERNAME, LoginData.strLogin.c_str());
-        curl_easy_setopt(m_curlHandle, CURLOPT_PASSWORD, LoginData.strPassword.c_str());
-      }
-      curl_easy_setopt(m_curlHandle, CURLOPT_FAILONERROR, true);
-      curl_easy_setopt(m_curlHandle, CURLOPT_WRITEDATA, &strBuffer);
-      curl_easy_setopt(m_curlHandle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-      curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYPEER, 0);
-
-      curlResult = curl_easy_perform(m_curlHandle);
+      int nretry = 0;
+      bool bSuccess;
       long http_code = 0;
-      curl_easy_getinfo (m_curlHandle, CURLINFO_RESPONSE_CODE, &http_code);
+      do
+      {
+        strBuffer.clear();
+        if (nretry > 0)
+          HTTPRetry(nretry);
 
-      if (curlResult == 0 && http_code >= 200 && http_code < 400)
+        curl_easy_setopt(m_curlHandle, CURLOPT_URL, strURL.c_str());
+        curl_easy_setopt(m_curlHandle, CURLOPT_WRITEFUNCTION, Write_CurlData_String);
+        if (!LoginData.strLogin.empty())
+        {
+          curl_easy_setopt(m_curlHandle, CURLOPT_USERNAME, LoginData.strLogin.c_str());
+          curl_easy_setopt(m_curlHandle, CURLOPT_PASSWORD, LoginData.strPassword.c_str());
+        }
+        curl_easy_setopt(m_curlHandle, CURLOPT_FAILONERROR, true);
+        curl_easy_setopt(m_curlHandle, CURLOPT_WRITEDATA, &strBuffer);
+        curl_easy_setopt(m_curlHandle, CURLOPT_USERAGENT, strUserAgent.c_str());
+        curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYPEER, 0);
+//        curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYHOST, 0);
+        curl_easy_setopt(m_curlHandle, CURLOPT_VERBOSE, 0);
+//        curl_easy_setopt(m_curlHandle, CURLOPT_SSLVERSION, 3);
+        curl_easy_setopt(m_curlHandle, CURLOPT_FOLLOWLOCATION, true);
+
+        curlResult = curl_easy_perform(m_curlHandle);
+        curl_easy_getinfo (m_curlHandle, CURLINFO_RESPONSE_CODE, &http_code);
+        nretry++;
+        bSuccess = (curlResult == 0 && http_code >= 200 && http_code < 400);
+      }
+      while (nretry < 5 && !bSuccess);
+
+      if (bSuccess)
         CLog::Log(logINFO, "HTTPHandler: curlURLToCache finished with success from URL %s to cachefile %s, read filesize: %ibytes",
                   strURL.c_str(), strCacheFile.c_str(), strBuffer.size());
       else
-      {
-        if (!bSkiperror)
-        CLog::Log(logERROR, "HTTPHandler: curlURLToCache finished with error code: %i from URL %s to localdir %s",
-                  http_code, strURL.c_str(), strCacheFile.c_str());
-        CLog::Log(logINFO, "HTTPHandler: curlURLToCache finished with code: %i from URL %s", http_code, strURL.c_str());
-        return http_code;
-      }
+        CLog::Log(logERROR, "HTTPHandler: curlURLToCache finished with error: \ncurl error: %i, %s\nhttp error: %i%s\nURL: %s\nlocaldir: %s",
+                  curlResult, curl_easy_strerror(curlResult), http_code, GetHTTPErrorFromCode(http_code).c_str(),  strURL.c_str(), strCacheFile.c_str());
+
       g_File.WriteFileFromStr(strCacheFile, strBuffer);
       return http_code;
     }
@@ -326,57 +391,78 @@ long CHTTPHandler::curlPUTPOFileToURL(std::string const &strFilePath, std::strin
 
   std::string strURL = URLEncode(cstrURL);
 
-  std::string strPO = g_File.ReadFileToStr(strFilePath);
-
-  std::string strPOJson = g_Json.CreateJSONStrFromPOStr(strPO);
-
-  Tputstrdata PutStrData;
-  PutStrData.pPOString = &strPOJson;
-  PutStrData.pos = 0;
-
   std::string strServerResp;
   CLoginData LoginData = GetCredentials(strURL);
 
   if(m_curlHandle) 
   {
-    struct curl_slist *headers=NULL;
-    headers = curl_slist_append( headers, "Content-Type: application/json");
-    headers = curl_slist_append( headers, "charsets: utf-8");
-
-    curl_easy_setopt(m_curlHandle, CURLOPT_READFUNCTION, Read_CurlData_String);
-    curl_easy_setopt(m_curlHandle, CURLOPT_WRITEFUNCTION, Write_CurlData_String);
-    curl_easy_setopt(m_curlHandle, CURLOPT_URL, strURL.c_str());
-    curl_easy_setopt(m_curlHandle, CURLOPT_UPLOAD, 1L);
-    curl_easy_setopt(m_curlHandle, CURLOPT_PUT, 1L);
-    curl_easy_setopt(m_curlHandle, CURLOPT_POST, 0); // disable post, we are doing a PUT not a POST this time
-    if (!LoginData.strLogin.empty())
-    {
-      curl_easy_setopt(m_curlHandle, CURLOPT_USERNAME, LoginData.strLogin.c_str());
-      curl_easy_setopt(m_curlHandle, CURLOPT_PASSWORD, LoginData.strPassword.c_str());
-    }
-    curl_easy_setopt(m_curlHandle, CURLOPT_FAILONERROR, true);
-    curl_easy_setopt(m_curlHandle, CURLOPT_READDATA, &PutStrData);
-    curl_easy_setopt(m_curlHandle, CURLOPT_WRITEDATA, &strServerResp);
-    curl_easy_setopt(m_curlHandle, CURLOPT_INFILESIZE_LARGE, (curl_off_t)strPOJson.size());
-    curl_easy_setopt(m_curlHandle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-    curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYPEER, 0);
-
-    curlResult = curl_easy_perform(m_curlHandle);
-
-    g_Json.ParseUploadedStringsData(strServerResp, stradded, strupd);
-
+    int nretry = 0;
+    bool bSuccess;
     long http_code = 0;
-    curl_easy_getinfo (m_curlHandle, CURLINFO_RESPONSE_CODE, &http_code);
+    do
+    {
+      strServerResp.clear();
+      if (nretry > 0)
+        HTTPRetry(nretry);
 
-    if (curlResult == 0 && http_code >= 200 && http_code < 400)
+      struct curl_httppost *post1;
+      struct curl_httppost *postend;
+
+      post1 = NULL;
+      postend = NULL;
+      curl_formadd(&post1, &postend,
+                  CURLFORM_COPYNAME, "file",
+                  CURLFORM_FILE, strFilePath.c_str(),
+                  CURLFORM_CONTENTTYPE, "application/octet-stream",
+                  CURLFORM_END);
+
+      curl_easy_setopt(m_curlHandle, CURLOPT_WRITEFUNCTION, Write_CurlData_String);
+      curl_easy_setopt(m_curlHandle, CURLOPT_URL, strURL.c_str());
+      curl_easy_setopt(m_curlHandle, CURLOPT_NOPROGRESS, 1L);
+      curl_easy_setopt(m_curlHandle, CURLOPT_HEADER, 1L);
+      curl_easy_setopt(m_curlHandle, CURLOPT_FOLLOWLOCATION, 1L);
+      curl_easy_setopt(m_curlHandle, CURLOPT_HTTPPOST, post1);
+      curl_easy_setopt(m_curlHandle, CURLOPT_USERAGENT, strUserAgent.c_str());
+      curl_easy_setopt(m_curlHandle, CURLOPT_MAXREDIRS, 50L);
+      curl_easy_setopt(m_curlHandle, CURLOPT_CUSTOMREQUEST, "PUT");
+
+      if (!LoginData.strLogin.empty())
+      {
+        curl_easy_setopt(m_curlHandle, CURLOPT_USERNAME, LoginData.strLogin.c_str());
+        curl_easy_setopt(m_curlHandle, CURLOPT_PASSWORD, LoginData.strPassword.c_str());
+      }
+      curl_easy_setopt(m_curlHandle, CURLOPT_WRITEDATA, &strServerResp);
+      curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYPEER, 0);
+      curl_easy_setopt(m_curlHandle, CURLOPT_VERBOSE, 0);
+      curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYHOST, 0);
+//      curl_easy_setopt(m_curlHandle, CURLOPT_SSLVERSION, 3);
+
+      curlResult = curl_easy_perform(m_curlHandle);
+
+      curl_easy_getinfo (m_curlHandle, CURLINFO_RESPONSE_CODE, &http_code);
+
+      curl_formfree(post1);
+      post1 = NULL;
+
+      bSuccess = (curlResult == 0 && http_code >= 200 && http_code < 400);
+      nretry++;
+    }
+    while (nretry < 5 && !bSuccess);
+
+    if (bSuccess)
       CLog::Log(logINFO, "HTTPHandler::curlFileToURL finished with success from File %s to URL %s",
                 strFilePath.c_str(), strURL.c_str());
     else
-    {
-      CLog::Log(logINFO, "HTTPHandler::curlFileToURL finished with error code: %i from file %s to URL %s",
-                http_code, strFilePath.c_str(), strURL.c_str());
-    }
+      CLog::Log(logERROR, "HTTPHandler::curlFileToURL finished with error: \ncurl error: %i, %s\nhttp error: %i%s\nURL: %s\nlocaldir: %s",
+                curlResult, curl_easy_strerror(curlResult), http_code, GetHTTPErrorFromCode(http_code).c_str(), strURL.c_str(), strFilePath.c_str());
+
+    size_t jsonPos = strServerResp.find_first_of("{");
+    if (jsonPos == std::string::npos)
+      CLog::Log(logERROR, "HTTPHandler::curlFileToURL no valid Transifex server response received");
+
+    strServerResp = strServerResp.substr(jsonPos);
+    g_Json.ParseUploadedStringsData(strServerResp, stradded, strupd);
+
     return http_code;
   }
   else
@@ -412,7 +498,9 @@ bool CHTTPHandler::ComparePOFilesInMem(CPOHandler * pPOHandler1, CPOHandler * pP
     if (bLangIsEN)
     {
       POEntry1.msgStr.clear();
+      POEntry1.msgStrPlural.clear();
       POEntry2.msgStr.clear();
+      POEntry2.msgStrPlural.clear();
     }
 
     if (!(POEntry1 == POEntry2))
@@ -443,53 +531,67 @@ bool CHTTPHandler::CreateNewResource(std::string strResname, std::string strENPO
 
   std::string strPOJson = g_Json.CreateNewresJSONStrFromPOStr(strResname, strPO);
 
-  Tputstrdata PutStrData;
-  PutStrData.pPOString = &strPOJson;
-  PutStrData.pos = 0;
-
   std::string strServerResp;
   CLoginData LoginData = GetCredentials(strURL);
 
   if(m_curlHandle) 
   {
-    struct curl_slist *headers=NULL;
-    headers = curl_slist_append( headers, "Content-Type: application/json");
-    headers = curl_slist_append( headers, "charsets: utf-8");
-
-    curl_easy_setopt(m_curlHandle, CURLOPT_READFUNCTION, Read_CurlData_String);
-    curl_easy_setopt(m_curlHandle, CURLOPT_WRITEFUNCTION, Write_CurlData_String);
-    curl_easy_setopt(m_curlHandle, CURLOPT_URL, strURL.c_str());
-    curl_easy_setopt(m_curlHandle, CURLOPT_POST, 1L);
-    if (!LoginData.strLogin.empty())
-    {
-      curl_easy_setopt(m_curlHandle, CURLOPT_USERNAME, LoginData.strLogin.c_str());
-      curl_easy_setopt(m_curlHandle, CURLOPT_PASSWORD, LoginData.strPassword.c_str());
-    }
-    curl_easy_setopt(m_curlHandle, CURLOPT_FAILONERROR, true);
-    curl_easy_setopt(m_curlHandle, CURLOPT_READDATA, &PutStrData);
-    curl_easy_setopt(m_curlHandle, CURLOPT_WRITEDATA, &strServerResp);
-    curl_easy_setopt(m_curlHandle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)strPOJson.size());
-    curl_easy_setopt(m_curlHandle, CURLOPT_USERAGENT, "libcurl-agent/1.0");
-    curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, headers);
-    curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYPEER, 0);
-
-    curlResult = curl_easy_perform(m_curlHandle);
-
+    int nretry = 0;
+    bool bSuccess;
     long http_code = 0;
-    curl_easy_getinfo (m_curlHandle, CURLINFO_RESPONSE_CODE, &http_code);
-
-    if (curlResult == 0 && http_code >= 200 && http_code < 400)
+    do
     {
+      Tputstrdata PutStrData;
+      PutStrData.pPOString = &strPOJson;
+      PutStrData.pos = 0;
+      strServerResp.clear();
+
+      if (nretry > 0)
+        HTTPRetry(nretry);
+
+      struct curl_slist *headers=NULL;
+      headers = curl_slist_append( headers, "Content-Type: application/json");
+      headers = curl_slist_append( headers, "charsets: utf-8");
+
+      curl_easy_setopt(m_curlHandle, CURLOPT_READFUNCTION, Read_CurlData_String);
+      curl_easy_setopt(m_curlHandle, CURLOPT_WRITEFUNCTION, Write_CurlData_String);
+      curl_easy_setopt(m_curlHandle, CURLOPT_URL, strURL.c_str());
+      curl_easy_setopt(m_curlHandle, CURLOPT_POST, 1L);
+      if (!LoginData.strLogin.empty())
+      {
+        curl_easy_setopt(m_curlHandle, CURLOPT_USERNAME, LoginData.strLogin.c_str());
+        curl_easy_setopt(m_curlHandle, CURLOPT_PASSWORD, LoginData.strPassword.c_str());
+      }
+      curl_easy_setopt(m_curlHandle, CURLOPT_FAILONERROR, true);
+      curl_easy_setopt(m_curlHandle, CURLOPT_READDATA, &PutStrData);
+      curl_easy_setopt(m_curlHandle, CURLOPT_WRITEDATA, &strServerResp);
+      curl_easy_setopt(m_curlHandle, CURLOPT_POSTFIELDSIZE_LARGE, (curl_off_t)strPOJson.size());
+      curl_easy_setopt(m_curlHandle, CURLOPT_USERAGENT, strUserAgent.c_str());
+      curl_easy_setopt(m_curlHandle, CURLOPT_HTTPHEADER, headers);
+      curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYPEER, 0);
+      curl_easy_setopt(m_curlHandle, CURLOPT_SSL_VERIFYHOST, 0);
+      curl_easy_setopt(m_curlHandle, CURLOPT_VERBOSE, 0);
+//      curl_easy_setopt(m_curlHandle, CURLOPT_SSLVERSION, 3);
+
+      curlResult = curl_easy_perform(m_curlHandle);
+
+      curl_easy_getinfo (m_curlHandle, CURLINFO_RESPONSE_CODE, &http_code);
+
+      bSuccess = (curlResult == 0 && http_code >= 200 && http_code < 400);
+      nretry++;
+    }
+    while (nretry < 5 && !bSuccess);
+
+    if (bSuccess)
       CLog::Log(logINFO, "CHTTPHandler::CreateNewResource finished with success for resource %s from EN PO file %s to URL %s",
                 strResname.c_str(), strENPOFilePath.c_str(), strURL.c_str());
-      g_File.CopyFile(strENPOFilePath, strCacheFile);
-      g_Json.ParseUploadedStrForNewRes(strServerResp, stradded);
-    }
     else
-    {
-      CLog::Log(logINFO, "CHTTPHandler::CreateNewResource finished with error code %i, for resource %s from EN PO file %s to URL %s ",
-                http_code, strResname.c_str(), strENPOFilePath.c_str(), strURL.c_str());
-    }
+      CLog::Log(logERROR, "CHTTPHandler::CreateNewResource finished with error:\ncurl error: %i, %s\nhttp error: %i%s\nURL: %s\nlocaldir: %s\nREsource: %s",
+                curlResult, curl_easy_strerror(curlResult), http_code, GetHTTPErrorFromCode(http_code).c_str(), strURL.c_str(), strENPOFilePath.c_str(), strResname.c_str());
+
+    g_File.CopyFile(strENPOFilePath, strCacheFile);
+    g_Json.ParseUploadedStrForNewRes(strServerResp, stradded);
+
     return http_code;
   }
   else
@@ -504,4 +606,38 @@ void CHTTPHandler::DeleteCachedFile (std::string const &strURL, std::string strP
   strCacheFile = m_strCacheDir + strPrefix + "/" + strCacheFile;
   if (g_File.FileExist(strCacheFile))
     g_File.DeleteFile(strCacheFile);
+}
+
+std::string CHTTPHandler::GetGitHUBAPIURL(std::string const & strURL, std::string const & strPathSuffix)
+{
+    if (strURL.find("//") >> 7)
+      CLog::Log(logERROR, "CHTTPHandler::ParseGitHUBURL: Internal error: // found in Github URL");
+
+    size_t pos1, pos2, pos3, pos4;
+    std::string strGitHubURL;
+
+    if (strURL.find("raw.github.com/") != std::string::npos)
+      pos1 = strURL.find("raw.github.com/")+15;
+    else if (strURL.find("raw2.github.com/") != std::string::npos)
+      pos1 = strURL.find("raw2.github.com/")+16;
+    else if (strURL.find("raw.githubusercontent.com/") != std::string::npos)
+      pos1 = strURL.find("raw.githubusercontent.com/")+26;
+    else
+      CLog::Log(logERROR, "ResHandler: Wrong Github URL format given");
+
+    pos2 = strURL.find("/", pos1+1);
+    pos3 = strURL.find("/", pos2+1);
+    pos4 = strURL.find("/", pos3+1);
+
+    std::string strOwner = strURL.substr(pos1, pos2-pos1);
+    std::string strRepo = strURL.substr(pos2, pos3-pos2);
+    std::string strPath = strURL.substr(pos4, strURL.size() - pos4 - 1);
+    std::string strGitBranch = strURL.substr(pos3+1, pos4-pos3-1);
+
+    strGitHubURL = "https://api.github.com/repos/" + strOwner + strRepo;
+    strGitHubURL += "/contents";
+    strGitHubURL += strPath + strPathSuffix;
+    strGitHubURL += "?ref=" + strGitBranch;
+
+    return strGitHubURL;
 }

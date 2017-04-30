@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -41,6 +41,10 @@ public:
   void AddPOData(CPOHandler &POHandler, std::string strLang) {m_mapPOFiles[strLang] = POHandler;}
   CAddonXMLHandler * GetXMLHandler () {return &m_AddonXMLHandler;}
   void SetXMLHandler (CAddonXMLHandler XMLHandler) {m_AddonXMLHandler = XMLHandler;}
+  void SetChangedLangsFromUpstream (std::list<std::string> lChanged) {m_lChangedLangsFromUpstream = lChanged;}
+  std::list<std::string> GetChangedLangsFromUpstream () {return m_lChangedLangsFromUpstream;}
+  void SetChangedLangsInAddXMLFromUpstream (std::list<std::string> lChanged) {m_lChangedLangsInAddXMLFromUpstream = lChanged;}
+  std::list<std::string> GetChangedLangsInAddXMLFromUpstream () {return m_lChangedLangsInAddXMLFromUpstream;}
 
 protected:
   void CreateMissingDirs(std::string strResRootDir, int resType);
@@ -48,4 +52,6 @@ protected:
 
   std::map<std::string, CPOHandler> m_mapPOFiles;
   CAddonXMLHandler m_AddonXMLHandler;
+  std::list<std::string> m_lChangedLangsFromUpstream;
+  std::list<std::string> m_lChangedLangsInAddXMLFromUpstream;
 };

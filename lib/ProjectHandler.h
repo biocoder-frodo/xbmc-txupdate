@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -56,12 +56,14 @@ protected:
   CAddonXMLEntry * const GetAddonDataFromXML(std::map<std::string, CResourceHandler> * pmapRes,
                                              const std::string &strResname, const std::string &strLangCode) const;
   void MergeAddonXMLEntry(CAddonXMLEntry const &EntryToMerge, CAddonXMLEntry &MergedAddonXMLEntry,
-                                           CAddonXMLEntry const &SourceENEntry, CAddonXMLEntry const &CurrENEntry);
+                                           CAddonXMLEntry const &SourceENEntry, CAddonXMLEntry const &CurrENEntry, bool UpstrToMerge,
+                                           bool &bResChangedFromUpstream);
   bool FindResInList(std::list<std::string> const &listResourceNamesTX, std::string strTXResName);
   std::list<std::string> GetLangsFromDir(std::string const &strLangDir);
   void CheckPOEntrySyntax(const CPOEntry * pPOEntry, std::string const &strLangCode, const CPOEntry * pcurrPOEntryEN);
   std::string GetEntryContent(const CPOEntry * pPOEntry, std::string const &strLangCode);
   void CheckCharCount(const CPOEntry * pPOEntry, std::string const &strLangCode, const CPOEntry * pcurrPOEntryEN, char chrToCheck);
+  void PrintChangedLangs(std::list<std::string> lChangedLangs);
 
   std::map<std::string, CResourceHandler> m_mapResourcesTX;
   std::map<std::string, CResourceHandler> m_mapResourcesUpstr;

@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -23,15 +23,25 @@
 #include "POHandler.h"
 #include "TinyXML/tinyxml.h"
 
+struct COtherAddonMetadata
+{
+  std::string strLanguage;
+  std::string strPlatform;
+  std::string strLicense;
+  std::string strForum;
+  std::string strWebsite;
+  std::string strEmail;
+  std::string strSource;
+};
+
 class CAddonXMLHandler
 {
 public:
   CAddonXMLHandler();
   ~CAddonXMLHandler();
-  bool LoadAddonXMLFile (std::string strAddonXMLFilename);
-  bool UpdateAddonXMLFile (std::string strAddonXMLFilename);
+  bool UpdateAddonXMLFile (std::string strAddonXMLFilename, bool bUpdateVersion);
   bool FetchAddonXMLFileUpstr (std::string strURL);
-  bool UpdateAddonChangelogFile (std::string strFilename, std::string strFormat);
+  bool UpdateAddonChangelogFile (std::string strFilename, std::string strFormat, bool bUpdate);
   bool FetchAddonChangelogFile (std::string strURL);
   bool LoadCoreVersion(std::string filename);
   bool FetchCoreVersionUpstr(std::string strURL);
@@ -46,6 +56,8 @@ public:
   void SetAddonChangelogFile(std::string const &strAddonChangelogFile) {m_strChangelogFile = strAddonChangelogFile;}
   std::string GetAddonLogFilename () const {return m_strLogFilename;}
   void SetAddonLogFilename(std::string const &strAddonLogFilename) {m_strLogFilename = strAddonLogFilename;}
+  COtherAddonMetadata GetAddonMetaData () const {return m_AddonMetadata;}
+  void SetAddonMetadata(COtherAddonMetadata const &MetaData) {m_AddonMetadata = MetaData;}
 
 protected:
   bool ProcessAddonXMLFile (std::string AddonXMLFilename, TiXmlDocument &xmlAddonXML);
@@ -63,4 +75,5 @@ protected:
   std::string m_strAddonVersion;
   std::string m_strChangelogFile;
   std::string m_strLogFilename;
+  COtherAddonMetadata m_AddonMetadata;
 };

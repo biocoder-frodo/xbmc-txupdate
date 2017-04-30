@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -24,6 +24,7 @@
 #include <list>
 #include <stdlib.h>
 #include "Settings.h"
+#include "Fileversioning.h"
 
 CJSONHandler g_Json;
 
@@ -63,7 +64,7 @@ std::list<std::string> CJSONHandler::ParseResources(std::string strJSON)
   return listResources;
 };
 
-std::list<std::string> CJSONHandler::ParseAvailLanguagesTX(std::string strJSON, bool bIsXBMCCore)
+std::list<std::string> CJSONHandler::ParseAvailLanguagesTX(std::string strJSON, bool bIsXBMCCore, std::string strURL)
 {
   Json::Value root;   // will contains the root value after parsing.
   Json::Reader reader;
@@ -80,6 +81,7 @@ std::list<std::string> CJSONHandler::ParseAvailLanguagesTX(std::string strJSON, 
   const Json::Value langs = root;
   std::string strLangsToFetch;
   std::string strLangsToDrop;
+  std::string strLangsBlacklisted;
 
   for(Json::ValueIterator itr = langs.begin() ; itr != langs.end() ; itr++)
   {
@@ -89,28 +91,39 @@ std::list<std::string> CJSONHandler::ParseAvailLanguagesTX(std::string strJSON, 
 
     Json::Value valu = *itr;
     std::string strCompletedPerc = valu.get("completed", "unknown").asString();
+    std::string strModTime = valu.get("last_update", "unknown").asString();
+
+    bool bLangBlacklisted = g_LCodeHandler.CheckIfLangCodeBlacklisted(lang);
 
     // we only add language codes to the list which has a minimum ready percentage defined in the xml file
     // we make an exception with all English derived languages, as they can have only a few srings changed
     if (lang.find("en_") != std::string::npos || strtol(&strCompletedPerc[0], NULL, 10) > g_Settings.GetMinCompletion()-1 || !bIsXBMCCore)
     {
-      strLangsToFetch += lang + ": " + strCompletedPerc + ", ";
-      listLangs.push_back(lang);
+      if (!bLangBlacklisted)
+      {
+        strLangsToFetch += lang + ": " + strCompletedPerc + ", ";
+        listLangs.push_back(lang);
+        g_Fileversion.SetVersionForURL(strURL + "translation/" + lang + "/?file", strModTime);
+      }
+      else
+      {
+	strLangsBlacklisted += lang + ": " + strCompletedPerc + ", ";
+      }
     }
     else
       strLangsToDrop += lang + ": " + strCompletedPerc + ", ";
   };
   CLog::Log(logINFO, "JSONHandler: ParseAvailLangs: Languages to be Fetcehed: %s", strLangsToFetch.c_str());
-  CLog::Log(logINFO, "JSONHandler: ParseAvailLangs: Languages to be Dropped (not enough completion): %s",
-            strLangsToDrop.c_str());
+  CLog::Log(logINFO, "JSONHandler: ParseAvailLangs: Languages to be Dropped (not enough completion): %s", strLangsToDrop.c_str());
+  CLog::Log(logINFO, "JSONHandler: ParseAvailLangs: Languages to be Dropped due they are blacklisted: %s",strLangsBlacklisted.c_str());
   return listLangs;
 };
 
-std::list<std::string> CJSONHandler::ParseAvailLanguagesGITHUB(std::string strJSON)
+std::list<std::string> CJSONHandler::ParseAvailLanguagesGITHUB(std::string strJSON, std::string strURL, bool bisPO)
 {
   Json::Value root;   // will contains the root value after parsing.
   Json::Reader reader;
-  std::string lang;
+  std::string lang, strVersion;
   std::list<std::string> listLangs;
 
   bool parsingSuccessful = reader.parse(strJSON, root );
@@ -131,9 +144,22 @@ std::list<std::string> CJSONHandler::ParseAvailLanguagesGITHUB(std::string strJS
       continue;
     }
     lang =JValu.get("name", "unknown").asString();
-    if (strType == "unknown")
+    if (lang == "unknown")
       CLog::Log(logERROR, "CJSONHandler::ParseAvailLanguagesGITHUB: no valid JSON data downloaded from Github");
-    listLangs.push_back(g_LCodeHandler.FindLangCode(lang));
+
+    strVersion =JValu.get("sha", "unknown").asString();
+    if (strVersion == "unknown")
+      CLog::Log(logERROR, "CJSONHandler::ParseAvailLanguagesGITHUB: no valid sha JSON data downloaded from Github");
+
+    if (!g_LCodeHandler.CheckIfLangBlacklisted(lang))
+    {
+      listLangs.push_back(g_LCodeHandler.FindLangCode(lang));
+      g_Fileversion.SetVersionForURL(strURL + lang + "/strings." + (bisPO ? "po" : "xml"), strVersion);
+    }
+    else
+    {
+      printf("");
+    } 
   };
 
   return listLangs;
@@ -243,3 +269,40 @@ std::string CJSONHandler::ParseLongProjectName(std::string const &strJSON)
 
   return root.get("name", "").asString();
 }
+
+void CJSONHandler::ParseAddonXMLVersionGITHUB(std::string strJSON, std::string strURL)
+{
+  Json::Value root;   // will contains the root value after parsing.
+  Json::Reader reader;
+  std::string strName, strVersion;
+
+  bool parsingSuccessful = reader.parse(strJSON, root );
+  if ( !parsingSuccessful )
+    CLog::Log(logERROR, "CJSONHandler::ParseAddonXMLVersionGITHUB: no valid JSON data downloaded from Github");
+
+  const Json::Value JLangs = root;
+
+  for(Json::ValueIterator itr = JLangs.begin() ; itr !=JLangs.end() ; itr++)
+  {
+    Json::Value JValu = *itr;
+    std::string strType =JValu.get("type", "unknown").asString();
+
+    if (strType == "unknown")
+      CLog::Log(logERROR, "CJSONHandler::ParseAddonXMLVersionGITHUB: no valid JSON data downloaded from Github");
+
+    strName =JValu.get("name", "unknown").asString();
+
+    if (strName == "unknown")
+      CLog::Log(logERROR, "CJSONHandler::ParseAddonXMLVersionGITHUB: no valid JSON data downloaded from Github");
+
+    if (strType == "file" && (strName == "addon.xml" || strName == "changelog.txt"))
+    {
+    strVersion =JValu.get("sha", "unknown").asString();
+
+    if (strVersion == "unknown")
+      CLog::Log(logERROR, "CJSONHandler::ParseAddonXMLVersionGITHUB: no valid sha JSON data downloaded from Github");
+
+    g_Fileversion.SetVersionForURL(strURL + strName, strVersion);
+    }
+  };
+};

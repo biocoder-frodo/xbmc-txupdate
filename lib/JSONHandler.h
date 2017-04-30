@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -37,8 +37,9 @@ public:
   CJSONHandler();
   ~CJSONHandler();
   std::list<std::string> ParseResources(std::string strJSON);
-  std::list<std::string> ParseAvailLanguagesTX(std::string strJSON, bool bIsXBMCCore);
-  std::list<std::string> ParseAvailLanguagesGITHUB(std::string strJSON);
+  std::list<std::string> ParseAvailLanguagesTX(std::string strJSON, bool bIsXBMCCore, std::string strURL);
+  std::list<std::string> ParseAvailLanguagesGITHUB(std::string strJSON, std::string strURL, bool bisPO);
+  void ParseAddonXMLVersionGITHUB(std::string strJSON, std::string strURL);
   std::map<std::string, CLangcodes> ParseTransifexLanguageDatabase(std::string strJSON);
   std::string CreateJSONStrFromPOStr(std::string const &strPO);
   std::string CreateNewresJSONStrFromPOStr(std::string strTXResname, std::string const &strPO);

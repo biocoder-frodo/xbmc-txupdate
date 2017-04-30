@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -51,6 +51,7 @@ bool CResourceHandler::FetchPOFilesTXToMem(std::string strURL, bool bIsXBMCCore)
   g_HTTPHandler.Cleanup();
   g_HTTPHandler.ReInit();
   CLog::Log(logINFO, "ResHandler: Starting to load resource from TX URL: %s into memory",strURL.c_str());
+  printf(" Langlist");
 
   std::string strtemp = g_HTTPHandler.GetURLToSTR(strURL + "stats/");
   if (strtemp.empty())
@@ -59,7 +60,7 @@ bool CResourceHandler::FetchPOFilesTXToMem(std::string strURL, bool bIsXBMCCore)
   char cstrtemp[strtemp.size()];
   strcpy(cstrtemp, strtemp.c_str());
 
-  std::list<std::string> listLangsTX = g_Json.ParseAvailLanguagesTX(strtemp, bIsXBMCCore);
+  std::list<std::string> listLangsTX = g_Json.ParseAvailLanguagesTX(strtemp, bIsXBMCCore, strURL);
 
   CPOHandler POHandler;
 
@@ -87,7 +88,7 @@ bool CResourceHandler::FetchPOFilesUpstreamToMem(CXMLResdata XMLResdata, std::li
   g_HTTPHandler.ReInit();
   CLog::Log(logINFO, "ResHandler: Starting to load resource from Upsream URL: %s into memory",XMLResdata.strUpstreamURL.c_str());
 
-  std::string strLangdirPrefix;
+  std::string strLangdirPrefix, strGitHubURL, strtemp;
 
   if (XMLResdata.Restype == CORE)
   {
@@ -96,9 +97,25 @@ bool CResourceHandler::FetchPOFilesUpstreamToMem(CXMLResdata XMLResdata, std::li
   }
   else
   {
+    // We get the version of the addon.xml and changelog.txt files here
+    if (XMLResdata.strUpstreamURL.find(".github") != std::string::npos)  //if URL is github, we download a directory tree to get SHA versions
+    {
+      strGitHubURL = g_HTTPHandler.GetGitHUBAPIURL(XMLResdata.strUpstreamURL, "");
+      printf(" Dir");
+      strtemp = g_HTTPHandler.GetURLToSTR(strGitHubURL);
+      if (strtemp.empty())
+        CLog::Log(logERROR, "ResHandler::FetchPOFilesUpstreamToMem: error getting addon.xml file version from github.com");
+
+      g_Json.ParseAddonXMLVersionGITHUB(strtemp, XMLResdata.strUpstreamURL);
+    }
+
+    printf(" Addxml");
     m_AddonXMLHandler.FetchAddonXMLFileUpstr(XMLResdata.strUpstreamURL + "addon.xml" + XMLResdata.strAddonXMLSuffix + XMLResdata.strURLSuffix);
     if (XMLResdata.bHasChangelog)
+    {
+      printf(" Chlog");
       m_AddonXMLHandler.FetchAddonChangelogFile(XMLResdata.strUpstreamURL + XMLResdata.strLogFilename + XMLResdata.strURLSuffix);
+    }
     if (XMLResdata.Restype == SKIN)
       strLangdirPrefix = "language/";
     else if (XMLResdata.Restype == ADDON)
@@ -107,42 +124,33 @@ bool CResourceHandler::FetchPOFilesUpstreamToMem(CXMLResdata XMLResdata, std::li
       return true;
   }
 
-  std::list<std::string> listLangs;
+  std::list<std::string> listLangs, listGithubLangs;
+
+  if (XMLResdata.strUpstreamURL.find(".github") != std::string::npos)  //if URL is github, we download a directory tree to get SHA versions
+  {
+    printf(" Langlist");
+    strtemp.clear();
+    strGitHubURL.clear();
+    strGitHubURL = g_HTTPHandler.GetGitHUBAPIURL(XMLResdata.strUpstreamURL, (XMLResdata.Restype == SKIN || XMLResdata.Restype == CORE)?
+                                                             "/language":"/resources/language");
+
+    strtemp = g_HTTPHandler.GetURLToSTR(strGitHubURL);
+    if (strtemp.empty())
+      CLog::Log(logERROR, "ResHandler::FetchPOFilesUpstreamToMem: error getting po file list from github.com");
+
+    listGithubLangs = g_Json.ParseAvailLanguagesGITHUB(strtemp, XMLResdata.strUpstreamURL + strLangdirPrefix, XMLResdata.strLangFileType != "xml");
+  }
+
 
   if (XMLResdata.strLangsFromUpstream == "tx_all")
   {
     CLog::Log(logINFO, "ResHandler: using language list previously got from Transifex");
     listLangs = listLangsTX;
   }
-  else if (XMLResdata.strLangsFromUpstream == "github_all")
+  else if (XMLResdata.strLangsFromUpstream == "github_all" || XMLResdata.strUpstreamURL.find("github") != std::string::npos)
   {
     CLog::Log(logINFO, "ResHandler: using language list dwonloaded with github API");
-    size_t pos1, pos2, pos3;
-    std::string strGitHubURL, strGitBranch;
-    if (XMLResdata.strUpstreamURL.find("raw.github.com/") == std::string::npos)
-      CLog::Log(logERROR, "ResHandler: Wrong Github URL format given");
-    pos1 = XMLResdata.strUpstreamURL.find("raw.github.com/")+15;
-    pos2 = XMLResdata.strUpstreamURL.find("/", pos1+1);
-    pos2 = XMLResdata.strUpstreamURL.find("/", pos2+1);
-    pos3 = XMLResdata.strUpstreamURL.find("/", pos2+1);
-    strGitHubURL = "https://api.github.com/repos/" + XMLResdata.strUpstreamURL.substr(pos1, pos2-pos1);
-    strGitHubURL += "/contents";
-    strGitHubURL += XMLResdata.strUpstreamURL.substr(pos3, XMLResdata.strUpstreamURL.size() - pos3 - 1);
-    strGitBranch = XMLResdata.strUpstreamURL.substr(pos2+1, pos3-pos2-1);
-    if (XMLResdata.Restype == SKIN || XMLResdata.Restype == CORE)
-      strGitHubURL += "/language";
-    else if (XMLResdata.Restype == ADDON)
-      strGitHubURL += "/resources/language";
-    strGitHubURL += "?ref=" + strGitBranch;
-
-    std::string strtemp = g_HTTPHandler.GetURLToSTR(strGitHubURL);
-    if (strtemp.empty())
-      CLog::Log(logERROR, "ResHandler::FetchPOFilesTXToMem: error getting po file list from transifex.net");
-
-    char cstrtemp[strtemp.size()];
-    strcpy(cstrtemp, strtemp.c_str());
-
-    listLangs = g_Json.ParseAvailLanguagesGITHUB(strtemp);
+    listLangs=listGithubLangs;
   }
   else
   {
@@ -166,6 +174,7 @@ bool CResourceHandler::FetchPOFilesUpstreamToMem(CXMLResdata XMLResdata, std::li
     }
     while (posEnd != std::string::npos);
   }
+
   bool bResult;
 
   for (std::list<std::string>::iterator it = listLangs.begin(); it != listLangs.end(); it++)
@@ -214,10 +223,19 @@ bool CResourceHandler::WritePOToFiles(std::string strProjRootDir, std::string st
       CLog::Log(logERROR, "ResHandler: No resourcetype defined for resource: %s",strResname.c_str());
   }
 
+  if (bTXUpdFile && !m_mapPOFiles.empty())
+    printf("Languages to update from upstream to upload to Transifex:");
+  size_t counter = 0;
+
   for (T_itmapPOFiles itmapPOFiles = m_mapPOFiles.begin(); itmapPOFiles != m_mapPOFiles.end(); itmapPOFiles++)
   {
     std::string strLang = g_LCodeHandler.FindLang(itmapPOFiles->first);
     std::string strPODir = strLangDir + strLang;
+
+    if (bTXUpdFile && counter < 20)
+      printf (" %s", itmapPOFiles->first.c_str());
+    if ((bTXUpdFile && counter == 19) && m_mapPOFiles.size() != 20)
+      printf ("+%i Langs", m_mapPOFiles.size()-19);
 
     CPOHandler * pPOHandler = &m_mapPOFiles[itmapPOFiles->first];
     if (XMLResdata.bWritePO || bTXUpdFile)
@@ -229,6 +247,9 @@ bool CResourceHandler::WritePOToFiles(std::string strProjRootDir, std::string st
     CLog::LogTable(logINFO, "writepo", "\t\t\t%s\t\t%i\t\t%i", itmapPOFiles->first.c_str(), pPOHandler->GetNumEntriesCount(),
               pPOHandler->GetClassEntriesCount());
   }
+  if (bTXUpdFile && !m_mapPOFiles.empty())
+    printf("\n");
+
   CLog::LogTable(logADDTABLEHEADER, "writepo", "--------------------------------------------------------------\n");
   CLog::LogTable(logADDTABLEHEADER, "writepo", "WritePOFiles:\tLang\t\tIDEntry\t\tClassEntry\n");
   CLog::LogTable(logADDTABLEHEADER, "writepo", "--------------------------------------------------------------\n");
@@ -237,9 +258,10 @@ bool CResourceHandler::WritePOToFiles(std::string strProjRootDir, std::string st
   // update local addon.xml file
   if (strResname != "xbmc.core" && strPrefixDir == g_Settings.GetMergedLangfilesDir())
   {
-    m_AddonXMLHandler.UpdateAddonXMLFile(strResourceDir + "addon.xml" + XMLResdata.strAddonXMLSuffix);
+    bool bResChangedFromUpstream = !m_lChangedLangsFromUpstream.empty() || !m_lChangedLangsInAddXMLFromUpstream.empty();
+    m_AddonXMLHandler.UpdateAddonXMLFile(strResourceDir + "addon.xml" + XMLResdata.strAddonXMLSuffix, bResChangedFromUpstream);
     if (XMLResdata.bHasChangelog)
-      m_AddonXMLHandler.UpdateAddonChangelogFile(strResourceDir + XMLResdata.strLogFilename, XMLResdata.strLogFormat);
+      m_AddonXMLHandler.UpdateAddonChangelogFile(strResourceDir + XMLResdata.strLogFilename, XMLResdata.strLogFormat, bResChangedFromUpstream);
   }
 
   return true;

@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2005-2008 Team XBMC
+ *      Copyright (C) 2005-2014 Team Kodi
  *      http://xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -25,6 +25,7 @@
 #include "Log.h"
 #include "HTTPUtils.h"
 #include "JSONHandler.h"
+#include "TinyXML/tinyxml.h"
 
 using namespace std;
 
@@ -121,4 +122,74 @@ std::string CLCodeHandler::VerifyLangCode(std::string LangCode)
     return LangCode;
   CLog::Log(logERROR, "LangCodes::VerifyLangCode: unable to find language code: %s", LangCode.c_str());
   return "UNKNOWN";
+}
+
+void CLCodeHandler::ReadWhiteBlackLangList (std::string strPath)
+{
+  if (!g_File.FileExist(strPath))
+    return;
+
+  std::string strXMLBuffer = g_File.ReadFileToStr(strPath);
+  if (strXMLBuffer.empty())
+    CLog::Log(logERROR, "CLCodeHandler::ReadWhiteBlackLangList: file error reading XML file from path: %s", strPath.c_str());
+
+  std::map<std::string, std::string>  * pList;
+
+  TiXmlDocument XMLDoc;
+
+  strXMLBuffer.push_back('\n');
+
+  if (!XMLDoc.Parse(strXMLBuffer.c_str(), 0, TIXML_DEFAULT_ENCODING))
+    CLog::Log(logERROR, "CLCodeHandler::ReadWhiteBlackLangList: xml file problem: %s %s\n", XMLDoc.ErrorDesc(), strPath.c_str());
+
+  TiXmlElement* pRootElement = XMLDoc.RootElement();
+
+  if (!pRootElement || pRootElement->NoChildren() || pRootElement->ValueTStr()=="blacklist")
+    pList = &m_BlackList;
+  else if (!pRootElement || pRootElement->NoChildren() || pRootElement->ValueTStr()=="whitelist")
+    pList = &m_WhiteList;
+  else
+    CLog::Log(logERROR, "CLCodeHandler::ReadWhiteBlackLangList: No root element or no child found in input XML file: %s\n", strPath.c_str());
+
+  const TiXmlElement *pChildElement = pRootElement->FirstChildElement("lang");
+  const char* pAttrId = NULL;
+  const char* pValue = NULL;
+  std::string valueString;
+  std::string strLcode;
+
+  while (pChildElement)
+  {
+    pAttrId=pChildElement->Attribute("lcode");
+    if (pAttrId && !pChildElement->NoChildren())
+    {
+      strLcode = pAttrId;
+      pValue = pChildElement->FirstChild()->Value();
+      valueString = pValue;
+      pList->operator[](strLcode) = valueString;
+    }
+    pChildElement = pChildElement->NextSiblingElement("lang");
+  }
+  // Free up the allocated memory for the XML file
+  XMLDoc.Clear();
+  return;
+}
+
+bool CLCodeHandler::CheckIfLangCodeBlacklisted (std::string strLcode)
+{
+  if (strLcode.find("_") != std::string::npos)
+    return m_WhiteList.find(strLcode) == m_WhiteList.end();
+  else
+    return m_BlackList.find(strLcode) != m_BlackList.end();
+}
+
+bool CLCodeHandler::CheckIfLangBlacklisted (std::string strLang)
+{
+  std::string strLcode = FindLangCode(strLang);
+  if (strLcode == "UNKNOWN")
+    CLog::Log(logERROR, "CLCodeHandler::CheckIfLangBlacklisted: invalid language: %s", strLang.c_str());
+
+  if (strLcode.find("_") != std::string::npos)
+    return m_WhiteList.find(strLcode) == m_WhiteList.end();
+  else
+    return m_BlackList.find(strLcode) != m_BlackList.end();
 }

@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -67,6 +67,7 @@ CPODocument::CPODocument()
   m_bhasLFWritten = false;
   m_previd = -1;
   m_writtenEntry = 0;
+  m_bIsUpdateTxDoc = false;
 };
 
 CPODocument::~CPODocument() {};
@@ -240,89 +241,119 @@ void CPODocument::ParseEntry()
 
     LineCursor = NextLineStart +1;
 
-    if (pPlaceToParse && ReadStringLine(strLine, pPlaceToParse,0)) continue; // we are reading a continous multilne string
-      else pPlaceToParse= NULL; // end of reading the multiline string
+    if (pPlaceToParse && ReadStringLine(strLine, pPlaceToParse,0))
+      continue; // we are reading a continous multilne string
+    else
+    {
+      if (g_Settings.GetRebrand() && pPlaceToParse)
+        g_CharsetUtils.reBrandXBMCToKodi(pPlaceToParse);
+      pPlaceToParse= NULL; // end of reading the multiline string
+    }
 
-      if (HasPrefix(strLine, "msgctxt") && !HasPrefix(strLine, "msgctxt \"#") && strLine.size() > 9)
+    if (HasPrefix(strLine, "msgctxt") && !HasPrefix(strLine, "msgctxt \"#") && strLine.size() > 9)
+    {
+      pPlaceToParse = &m_Entry.msgCtxt;
+      if (!ReadStringLine(strLine, pPlaceToParse,8))
       {
-        pPlaceToParse = &m_Entry.msgCtxt;
-        if (!ReadStringLine(strLine, pPlaceToParse,8))
-        {
-          CLog::Log(logWARNING, "POParser: wrong msgctxt format. Failed entry: %s", m_Entry.Content.c_str());
-          pPlaceToParse = NULL;
-        }
+        CLog::Log(logWARNING, "POParser: wrong msgctxt format. Failed entry: %s", m_Entry.Content.c_str());
+        pPlaceToParse = NULL;
       }
+    }
 
-      else if (HasPrefix(strLine, "msgid_plural") && strLine.size() > 14)
+    else if (HasPrefix(strLine, "msgid_plural") && strLine.size() > 14)
+    {
+      pPlaceToParse = &m_Entry.msgIDPlur;
+      if (!ReadStringLine(strLine, pPlaceToParse,13))
       {
-        pPlaceToParse = &m_Entry.msgIDPlur;
-        if (!ReadStringLine(strLine, pPlaceToParse,13))
-        {
-          CLog::Log(logWARNING, "POParser: wrong msgid_plural format. Failed entry: %s", m_Entry.Content.c_str());
-          pPlaceToParse = NULL;
-        }
+        CLog::Log(logWARNING, "POParser: wrong msgid_plural format. Failed entry: %s", m_Entry.Content.c_str());
+        pPlaceToParse = NULL;
       }
+    }
 
-      else if (HasPrefix(strLine, "msgid") && strLine.size() > 7)
+    else if (HasPrefix(strLine, "msgid") && strLine.size() > 7)
+    {
+      pPlaceToParse = &m_Entry.msgID;
+      if (!ReadStringLine(strLine, pPlaceToParse,6))
       {
-        pPlaceToParse = &m_Entry.msgID;
-        if (!ReadStringLine(strLine, pPlaceToParse,6))
-        {
-          CLog::Log(logWARNING, "POParser: wrong msgid format. Failed entry: %s", m_Entry.Content.c_str());
-          pPlaceToParse = NULL;
-        }
+        CLog::Log(logWARNING, "POParser: wrong msgid format. Failed entry: %s", m_Entry.Content.c_str());
+        pPlaceToParse = NULL;
       }
+    }
 
-      else if (HasPrefix(strLine, "msgstr[") && strLine[8] == ']'&& strLine.size() > 11)
+    else if (HasPrefix(strLine, "msgstr[") && strLine[8] == ']'&& strLine.size() > 11)
+    {
+      m_Entry.msgStrPlural.push_back("");
+      pPlaceToParse = &m_Entry.msgStrPlural[m_Entry.msgStrPlural.size()-1];
+      if (!ReadStringLine(strLine, pPlaceToParse,10))
       {
-        m_Entry.msgStrPlural.push_back("");
-        pPlaceToParse = &m_Entry.msgStrPlural[m_Entry.msgStrPlural.size()-1];
-        if (!ReadStringLine(strLine, pPlaceToParse,10))
-        {
-          CLog::Log(logWARNING, "POParser: wrong msgstr[] format. Failed entry: %s", m_Entry.Content.c_str());
-          pPlaceToParse = NULL;
-        }
+        CLog::Log(logWARNING, "POParser: wrong msgstr[] format. Failed entry: %s", m_Entry.Content.c_str());
+        pPlaceToParse = NULL;
       }
+    }
 
-      else if (HasPrefix(strLine, "msgstr") && strLine.size() > 8)
+    else if (HasPrefix(strLine, "msgstr") && strLine.size() > 8)
+    {
+      pPlaceToParse = &m_Entry.msgStr;
+      if (!ReadStringLine(strLine, pPlaceToParse,7))
       {
-        pPlaceToParse = &m_Entry.msgStr;
-        if (!ReadStringLine(strLine, pPlaceToParse,7))
-        {
-          CLog::Log(logWARNING, "POParser: wrong msgstr format. Failed entry: %s", m_Entry.Content.c_str());
-          pPlaceToParse = NULL;
-        }
+        CLog::Log(logWARNING, "POParser: wrong msgstr format. Failed entry: %s", m_Entry.Content.c_str());
+        pPlaceToParse = NULL;
       }
+    }
 
-      else if (HasPrefix(strLine, "msgctxt \"#") && strLine.size() > 10 && isdigit(strLine[10]))
-        ParseNumID(strLine, 10);
+    else if (HasPrefix(strLine, "msgctxt \"#") && strLine.size() > 10 && isdigit(strLine[10]))
+      ParseNumID(strLine, 10);
 
-      else if (HasPrefix(strLine, "#:") && strLine.size() > 2)
+    else if (HasPrefix(strLine, "#:") && strLine.size() > 2)
+    {
+      std::string strCommnt = strLine.substr(2);
+      if (strCommnt.at(0) != ' ')
       {
-        std::string strCommnt = strLine.substr(2);
-        m_Entry.referenceComm.push_back(strCommnt);
+        strCommnt = " " + strCommnt;
+        CLog::SyntaxLog(logWARNING, "POParser: Wrong comment format. Space needed. Failed entry: %s", m_Entry.Content.c_str());
       }
+      m_Entry.referenceComm.push_back(strCommnt);
+    }
 
-      else if (HasPrefix(strLine, "#.") && strLine.size() > 2)
+    else if (HasPrefix(strLine, "#.") && strLine.size() > 2)
+    {
+      std::string strCommnt = strLine.substr(2);
+      if (g_Settings.GetRebrand())
+        g_CharsetUtils.reBrandXBMCToKodi(&strCommnt);
+      if (strCommnt.at(0) != ' ')
       {
-        std::string strCommnt = strLine.substr(2);
-        m_Entry.extractedComm.push_back(strCommnt);
+        strCommnt = " " + strCommnt;
+        CLog::SyntaxLog(logWARNING, "POParser: Wrong comment format. Space needed. Failed entry: %s", m_Entry.Content.c_str());
       }
+      m_Entry.extractedComm.push_back(strCommnt);
+    }
 
-      else if (HasPrefix(strLine, "#") && strLine.size() > 1 && strLine[1] != '.' &&
-        strLine[1] != ':' && strLine[1] != ' ')
-      {
-        std::string strCommnt = strLine.substr(1);
-        if (strCommnt.substr(0,5) != "empty")
-          m_Entry.interlineComm.push_back(strCommnt);
-      }
-      else if (HasPrefix(strLine, "# "))
-      {
-        std::string strCommnt = strLine.substr(2);
-        m_Entry.translatorComm.push_back(strCommnt);
-      }
-      else
-        CLog::Log(logWARNING, "POParser: unknown line type found. Failed entry: %s", m_Entry.Content.c_str());
+    else if (HasPrefix(strLine, "#") && strLine.size() > 1 && strLine[1] != '.' &&
+      strLine[1] != ':' && strLine[1] != ' ')
+    {
+      std::string strCommnt = strLine.substr(1);
+      if (g_Settings.GetRebrand())
+        g_CharsetUtils.reBrandXBMCToKodi(&strCommnt);
+      if (strCommnt.substr(0,5) != "empty")
+        m_Entry.interlineComm.push_back(strCommnt);
+    }
+    else if (HasPrefix(strLine, "# "))
+    {
+      std::string strCommnt = strLine.substr(2);
+      if (g_Settings.GetRebrand())
+        g_CharsetUtils.reBrandXBMCToKodi(&strCommnt);
+      m_Entry.translatorComm.push_back(strCommnt);
+    }
+    else
+      CLog::Log(logWARNING, "POParser: unknown line type found. Failed entry: %s", m_Entry.Content.c_str());
+  }
+  if (g_Settings.GetRebrand() && pPlaceToParse)
+    g_CharsetUtils.reBrandXBMCToKodi(pPlaceToParse);
+  if ((m_Entry.Type == ID_FOUND || m_Entry.Type == MSGID_FOUND || m_Entry.Type == MSGID_PLURAL_FOUND) &&  m_Entry.msgID == "")
+  {
+    m_Entry.msgID = " ";
+    CLog::Log(logWARNING, "POParser: empty msgid field corrected to a space char. Failed entry: %s", m_Entry.Content.c_str());
+    CLog::SyntaxLog(logWARNING, "POParser: empty msgid field corrected to a space char. Failed entry: %s", m_Entry.Content.c_str());
   }
   return;
 };
@@ -435,7 +466,7 @@ void CPODocument::WritePOEntry(const CPOEntry &currEntry, unsigned int nplurals)
 {
   m_bhasLFWritten = false;
 
-  if ((!m_bIsForeignLang || g_Settings.GetForcePOComments()) && currEntry.Type == ID_FOUND)
+  if ((!m_bIsForeignLang || g_Settings.GetForcePOComments()) && currEntry.Type == ID_FOUND && !m_bIsUpdateTxDoc)
   {
     int id = currEntry.numID;
     if (id-m_previd >= 2 && m_previd > -1 && !m_bIsForeignLang)

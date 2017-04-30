@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -187,11 +187,20 @@ void CFile::CopyFile(std::string strSourceFileName, std::string strDestFileName)
 size_t CFile::GetFileAge(std::string strFileName)
 {
   struct stat b;
-  if (!stat(strFileName.c_str(), &b)) 
+  time_t now = std::time(0);
+
+  if (g_File.FileExist(strFileName + ".time"))
   {
-    time_t now = std::time(0);
+    time_t ReadFileAge = GetFileAgeFromFile(strFileName);
+    return now-ReadFileAge;
+  }
+
+  else if (!stat(strFileName.c_str(), &b))
+  {
+    WriteFileAgeToFile(strFileName, b.st_mtime);
     return now-b.st_mtime;
   }
+
   else
   {
     CLog::Log(logWARNING, "FileUtils: Unable to determine the last modify date for file: %s", strFileName.c_str());
@@ -295,4 +304,52 @@ int unlink_cb(const char *fpath, const struct stat *sb, int typeflag, struct FTW
 int CFile::DeleteDirectory(std::string strDirPath)
 {
   return nftw(strDirPath.c_str(), unlink_cb, 64, FTW_DEPTH | FTW_PHYS);
+}
+
+time_t CFile::GetFileAgeFromFile(std::string strFileName)
+{
+  strFileName = strFileName + ".time";
+
+  FILE * file;
+  time_t readTime;
+  file = fopen(strFileName.c_str(), "rb");
+  if (!file)
+    CLog::Log(logERROR, "FileUtils::GetFileAgeFromFile: unable to read file: %s", strFileName.c_str());
+
+  fseek(file, 0, SEEK_END);
+  int64_t fileLength = ftell(file);
+  fseek(file, 0, SEEK_SET);
+
+  if (fileLength != sizeof(time_t))
+    CLog::Log(logERROR, "FileUtils::GetFileAgeFromFile: wrong file length for time file: %s", strFileName.c_str());
+
+  unsigned int readBytes =  fread(&readTime, sizeof(time_t), 1, file);
+  fclose(file);
+
+  if (readBytes != 1)
+  {
+    CLog::Log(logERROR, "FileUtils::GetFileAgeFromFile actual read data differs from file size, for string file: %s",strFileName.c_str());
+  }
+  return readTime;
+};
+
+bool CFile::WriteFileAgeToFile(std::string strFileName, time_t FileAgeTime)
+{
+  strFileName = strFileName + ".time";
+  FILE * pFile = fopen (strFileName.c_str(),"wb");
+  if (pFile == NULL)
+  {
+    CLog::Log(logERROR, "FileUtils::WriteFileAgeToFile failed for file: %s\n", strFileName.c_str());
+    return false;
+  }
+  fwrite(&FileAgeTime, sizeof(time_t), 1, pFile);
+  fclose(pFile);
+
+  return true;
+};
+
+void CFile::WriteNowToFileAgeFile(std::string strFileName)
+{
+  time_t now = std::time(0);
+  WriteFileAgeToFile(strFileName, now);
 }

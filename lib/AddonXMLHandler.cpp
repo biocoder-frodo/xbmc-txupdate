@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -24,7 +24,7 @@
 #include <vector>
 #include <algorithm>
 #include "HTTPUtils.h"
-
+#include "Settings.h"
 
 using namespace std;
 
@@ -33,27 +33,6 @@ CAddonXMLHandler::CAddonXMLHandler()
 
 CAddonXMLHandler::~CAddonXMLHandler()
 {};
-
-bool CAddonXMLHandler::LoadAddonXMLFile (std::string strAddonXMLFilename)
-{
-  m_strAddonXMLFile = g_File.ReadFileToStr(strAddonXMLFilename);
-  if (m_strAddonXMLFile.empty())
-  {
-    CLog::Log(logERROR, "AddonXMLHandler: Load AddonXML file problem for file: %s\n", strAddonXMLFilename.c_str());
-    return false;
-  }
-
-  g_File.ConvertStrLineEnds(m_strAddonXMLFile);
-
-  TiXmlDocument xmlAddonXML;
-
-  if (!xmlAddonXML.Parse(m_strAddonXMLFile.c_str(), 0, TIXML_DEFAULT_ENCODING))
-  {
-    CLog::Log(logERROR, "AddonXMLHandler: AddonXML file problem: %s %s\n", xmlAddonXML.ErrorDesc(), strAddonXMLFilename.c_str());
-    return false;
-  }
-  return ProcessAddonXMLFile(strAddonXMLFilename, xmlAddonXML);
-}
 
 bool CAddonXMLHandler::FetchAddonXMLFileUpstr (std::string strURL)
 {
@@ -98,7 +77,7 @@ bool CAddonXMLHandler::ProcessAddonXMLFile (std::string AddonXMLFilename, TiXmlD
   if (!pMainAttrId)
   {
     CLog::Log(logWARNING, "AddonXMLHandler: No addon name was available in addon.xml file: %s\n", AddonXMLFilename.c_str());
-    m_strResourceData += "xbmc-unnamed\n";
+    m_strResourceData += "kodi-unnamed\n";
   }
   else
     m_strResourceData += g_CharsetUtils.ToUTF8(addonXMLEncoding, CstrToString(pMainAttrId)) + "\n";
@@ -154,10 +133,15 @@ bool CAddonXMLHandler::ProcessAddonXMLFile (std::string AddonXMLFilename, TiXmlD
       strLang = "en";
     strLang = g_LCodeHandler.VerifyLangCode(strLang); // just make sure we read a valid language code
 
-    if (pChildSummElement->FirstChild())
+    bool bLangBlackListed = g_LCodeHandler.CheckIfLangCodeBlacklisted(strLang);
+
+    if (pChildSummElement->FirstChild() && !bLangBlackListed)
     {
       std::string strValue = CstrToString(pChildSummElement->FirstChild()->Value());
-      m_mapAddonXMLData[strLang].strSummary = g_CharsetUtils.ToUTF8(addonXMLEncoding, strValue);
+            strValue = g_CharsetUtils.ToUTF8(addonXMLEncoding, strValue);
+      if (g_Settings.GetRebrand())
+        g_CharsetUtils.reBrandXBMCToKodi(&strValue);
+      m_mapAddonXMLData[strLang].strSummary = strValue;
     }
     pChildSummElement = pChildSummElement->NextSiblingElement("summary");
   }
@@ -172,10 +156,15 @@ bool CAddonXMLHandler::ProcessAddonXMLFile (std::string AddonXMLFilename, TiXmlD
       strLang = "en";
     strLang = g_LCodeHandler.VerifyLangCode(strLang); // just make sure we read a valid language code
 
-    if (pChildDescElement->FirstChild())
+    bool bLangBlackListed = g_LCodeHandler.CheckIfLangCodeBlacklisted(strLang);
+
+    if (pChildDescElement->FirstChild() && !bLangBlackListed)
     {
       std::string strValue = CstrToString(pChildDescElement->FirstChild()->Value());
-      m_mapAddonXMLData[strLang].strDescription = g_CharsetUtils.ToUTF8(addonXMLEncoding, strValue);
+      strValue = g_CharsetUtils.ToUTF8(addonXMLEncoding, strValue);
+      if (g_Settings.GetRebrand())
+        g_CharsetUtils.reBrandXBMCToKodi(&strValue);
+      m_mapAddonXMLData[strLang].strDescription = strValue;
     }
     pChildDescElement = pChildDescElement->NextSiblingElement("description");
   }
@@ -190,20 +179,89 @@ bool CAddonXMLHandler::ProcessAddonXMLFile (std::string AddonXMLFilename, TiXmlD
       strLang = "en";
     strLang = g_LCodeHandler.VerifyLangCode(strLang); // just make sure we read a valid language code
 
-    if (pChildDisclElement->FirstChild())
+    bool bLangBlackListed = g_LCodeHandler.CheckIfLangCodeBlacklisted(strLang);
+
+    if (pChildDisclElement->FirstChild() &&!bLangBlackListed)
     {
       std::string strValue = CstrToString(pChildDisclElement->FirstChild()->Value());
-      m_mapAddonXMLData[strLang].strDisclaimer = g_CharsetUtils.ToUTF8(addonXMLEncoding, strValue);
+      strValue = g_CharsetUtils.ToUTF8(addonXMLEncoding, strValue);
+      if (g_Settings.GetRebrand())
+        g_CharsetUtils.reBrandXBMCToKodi(&strValue);
+      m_mapAddonXMLData[strLang].strDisclaimer = strValue;
     }
     pChildDisclElement = pChildDisclElement->NextSiblingElement("disclaimer");
+  }
+
+  const TiXmlElement *pChildLangElement = pChildElement->FirstChildElement("language");
+  if (pChildLangElement)
+  {
+    if (pChildLangElement->FirstChild())
+      m_AddonMetadata.strLanguage = pChildLangElement->FirstChild()->Value();
+    else
+      m_AddonMetadata.strLanguage = " ";
+  }
+
+  const TiXmlElement *pChildPlatfElement = pChildElement->FirstChildElement("platform");
+  if (pChildPlatfElement)
+  {
+    if (pChildPlatfElement->FirstChild())
+      m_AddonMetadata.strPlatform = pChildPlatfElement->FirstChild()->Value();
+    else
+      m_AddonMetadata.strPlatform = " ";
+  }
+
+  const TiXmlElement *pChildLicElement = pChildElement->FirstChildElement("license");
+  if (pChildLicElement)
+  {
+    if (pChildLicElement->FirstChild())
+      m_AddonMetadata.strLicense = pChildLicElement->FirstChild()->Value();
+    else
+      m_AddonMetadata.strLicense = " ";
+  }
+
+  const TiXmlElement *pChildForElement = pChildElement->FirstChildElement("forum");
+  if (pChildForElement)
+  {
+    if (pChildForElement->FirstChild())
+      m_AddonMetadata.strForum = pChildForElement->FirstChild()->Value();
+    else
+      m_AddonMetadata.strForum = " ";
+  }
+
+  const TiXmlElement *pChildWebElement = pChildElement->FirstChildElement("website");
+  if (pChildWebElement)
+  {
+    if (pChildWebElement->FirstChild())
+      m_AddonMetadata.strWebsite = pChildWebElement->FirstChild()->Value();
+    else
+      m_AddonMetadata.strWebsite = " ";
+  }
+
+  const TiXmlElement *pChildEmlElement = pChildElement->FirstChildElement("email");
+  if (pChildEmlElement)
+  {
+    if (pChildEmlElement->FirstChild())
+      m_AddonMetadata.strEmail = pChildEmlElement->FirstChild()->Value();
+    else
+      m_AddonMetadata.strEmail = " ";
+  }
+
+  const TiXmlElement *pChildSrcElement = pChildElement->FirstChildElement("source");
+  if (pChildSrcElement)
+  {
+    if (pChildSrcElement->FirstChild())
+      m_AddonMetadata.strSource = pChildSrcElement->FirstChild()->Value();
+    else
+      m_AddonMetadata.strSource = " ";
   }
 
   return true;
 };
 
-bool CAddonXMLHandler::UpdateAddonXMLFile (std::string strAddonXMLFilename)
+bool CAddonXMLHandler::UpdateAddonXMLFile (std::string strAddonXMLFilename, bool bUpdateVersion)
 {
-  UpdateVersionNumber();
+  if (bUpdateVersion)
+    UpdateVersionNumber();
 
   std::string strXMLEntry;
   size_t posS1, posE1, posS2, posE2;
@@ -230,41 +288,6 @@ bool CAddonXMLHandler::UpdateAddonXMLFile (std::string strAddonXMLFilename)
   std::string strAllign = m_strAddonXMLFile.substr(m_strAddonXMLFile.find_first_not_of("\n\r", posMetaDataStart),
                                                    m_strAddonXMLFile.find("<",posMetaDataStart) - 
                                                    m_strAddonXMLFile.find_first_not_of("\n\r", posMetaDataStart));
-
-  bool bisEntryToKeep = false;
-  bool bisSecondClose = false;
-  std::string strEntry;
-  std::vector<std::string> vecEntryToKeep;
-
-  // find entries not about summary, description, discaimer. Collect them in a vector.
-  for (std::string::iterator it = strPrevMetaData.begin(); it != strPrevMetaData.end(); it++)
-  {
-    if (!bisSecondClose && *it == '<')
-    {
-      size_t pos  = it - strPrevMetaData.begin();
-      if (strPrevMetaData.substr(pos+1,1) != "/" && strPrevMetaData.substr(pos+1,7) != "summary" && 
-          strPrevMetaData.substr(pos+1,11) != "description" && strPrevMetaData.substr(pos+1,10) != "disclaimer")
-      {
-        if (strPrevMetaData.substr(pos+1,3) == "!--")
-          bisSecondClose = true;
-        bisEntryToKeep = true;
-      }
-    }
-    if (bisEntryToKeep)
-      strEntry += *it;
-    if (bisEntryToKeep && *it == '>')
-    {
-      if (bisSecondClose)
-      {
-        vecEntryToKeep.push_back(strEntry);
-        strEntry.clear();
-        bisEntryToKeep = false;
-        bisSecondClose = false;
-      }
-      else
-        bisSecondClose = true;
-    }
-  }
 
   std::list<std::string> listAddonDataLangs;
 
@@ -293,9 +316,41 @@ bool CAddonXMLHandler::UpdateAddonXMLFile (std::string strAddonXMLFilename)
                         + "</disclaimer>\n";
   }
 
-  for (std::vector<std::string>::iterator itvec = vecEntryToKeep.begin(); itvec != vecEntryToKeep.end();itvec++)
-    strNewMetadata += strAllign + *itvec + "\n";
-
+  if (!m_AddonMetadata.strLanguage.empty())
+  {
+    if (m_AddonMetadata.strLanguage.compare(" ") == 0) m_AddonMetadata.strLanguage.clear();
+    strNewMetadata += strAllign + "<language>" + m_AddonMetadata.strLanguage + "</language>\n";
+  }
+  if (!m_AddonMetadata.strPlatform.empty())
+  {
+    if (m_AddonMetadata.strPlatform.compare(" ") ==0) m_AddonMetadata.strPlatform.clear();
+    strNewMetadata += strAllign + "<platform>" + m_AddonMetadata.strPlatform + "</platform>\n";
+  }
+  if (!m_AddonMetadata.strLicense.empty())
+  {
+    if (m_AddonMetadata.strLicense.compare(" ") ==0) m_AddonMetadata.strLicense.clear();
+    strNewMetadata += strAllign + "<license>" + m_AddonMetadata.strLicense + "</license>\n";
+  }
+  if (!m_AddonMetadata.strForum.empty())
+  {
+    if (m_AddonMetadata.strForum.compare(" ") == 0) m_AddonMetadata.strForum.clear();
+    strNewMetadata += strAllign + "<forum>" + m_AddonMetadata.strForum + "</forum>\n";
+  }
+  if (!m_AddonMetadata.strWebsite.empty())
+  {
+    if (m_AddonMetadata.strWebsite.compare(" ") == 0) m_AddonMetadata.strWebsite.clear();
+    strNewMetadata += strAllign + "<website>" + m_AddonMetadata.strWebsite + "</website>\n";
+  }
+  if (!m_AddonMetadata.strEmail.empty())
+  {
+    if (m_AddonMetadata.strEmail .compare(" ") == 0) m_AddonMetadata.strEmail.clear();
+    strNewMetadata += strAllign + "<email>" + m_AddonMetadata.strEmail + "</email>\n";
+  }
+  if (!m_AddonMetadata.strSource.empty())
+  {
+    if (m_AddonMetadata.strSource.compare(" ") ==0 ) m_AddonMetadata.strSource.clear();
+    strNewMetadata += strAllign + "<source>" + m_AddonMetadata.strSource + "</source>\n";
+  }
 
   m_strAddonXMLFile.replace(posMetaDataStart, posMetaDataEnd -posMetaDataStart +1, strNewMetadata);
   return g_File.WriteFileFromStr(strAddonXMLFilename, m_strAddonXMLFile.c_str());
@@ -308,7 +363,7 @@ std::string CAddonXMLHandler::GetXMLEntry (std::string const &strprefix, size_t 
   return m_strAddonXMLFile.substr(pos1, pos2 - pos1 +1);
 }
 
-bool CAddonXMLHandler::UpdateAddonChangelogFile (std::string strFilename, std::string strFormat)
+bool CAddonXMLHandler::UpdateAddonChangelogFile (std::string strFilename, std::string strFormat, bool bUpdate)
 {
   size_t pos1;
   if ((pos1 = strFormat.find("%i")) != std::string::npos)
@@ -322,13 +377,15 @@ bool CAddonXMLHandler::UpdateAddonChangelogFile (std::string strFilename, std::s
   if ((pos1 = strFormat.find("%M")) != std::string::npos)
     strFormat.replace(pos1, 2, g_File.GetCurrMonthText().c_str());
 
-  m_strChangelogFile = strFormat + m_strChangelogFile;
+  if  (bUpdate)
+    m_strChangelogFile = strFormat + m_strChangelogFile;
+
   return g_File.WriteFileFromStr(strFilename, m_strChangelogFile.c_str());
 }
 
 bool CAddonXMLHandler::FetchAddonChangelogFile (std::string strURL)
 {
-  std::string strChangelogFile = g_HTTPHandler.GetURLToSTR(strURL, true);
+  std::string strChangelogFile = g_HTTPHandler.GetURLToSTR(strURL);
 
   g_File.ConvertStrLineEnds(strChangelogFile);
 
@@ -422,7 +479,7 @@ bool CAddonXMLHandler::FetchCoreVersionUpstr(std::string strURL)
 {
   std::string strGuiInfoFile = g_HTTPHandler.GetURLToSTR(strURL);
   if (strGuiInfoFile.empty())
-    CLog::Log(logERROR, "CAddonXMLHandler::FetchCoreVersionUpstr: http error getting xbmc version file from upstream url: %s", strURL.c_str());
+    CLog::Log(logERROR, "CAddonXMLHandler::FetchCoreVersionUpstr: http error getting kodi version file from upstream url: %s", strURL.c_str());
   return ProcessCoreVersion(strURL, strGuiInfoFile);
 }
 
@@ -467,7 +524,7 @@ bool CAddonXMLHandler::ProcessCoreVersion(std::string filename, std::string &str
 
   size_t startpos = strBuffer.find("#define VERSION_MAJOR ") + 22;
   size_t endpos = strBuffer.find_first_of(" \n\r", startpos);
-  m_strResourceData += "# XBMC-core v" + strBuffer.substr(startpos, endpos-startpos);
+  m_strResourceData += "# Kodi-core v" + strBuffer.substr(startpos, endpos-startpos);
   m_strResourceData += ".";
 
   startpos = strBuffer.find("#define VERSION_MINOR ") + 22;

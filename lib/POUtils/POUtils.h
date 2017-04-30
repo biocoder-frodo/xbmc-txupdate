@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -95,6 +95,7 @@ public:
   void WriteHeader(const std::string &strHeader);
   void WritePOEntry(const CPOEntry &currEntry, unsigned int nplurals);
   void SetIfIsEnglish(bool bIsENLang) {m_bIsForeignLang = !bIsENLang;}
+  void SetIfIsUpdDoc(bool bIsUpdTx) {m_bIsUpdateTxDoc = bIsUpdTx;}
   bool FetchURLToMem(const std::string &strURL, bool bSkipError);
   bool ParseStrToMem(const std::string &strPOData, std::string const &strFilePath);
 
@@ -118,6 +119,7 @@ protected:
   std::string m_strOutBuffer;
   bool m_bhasLFWritten;
   bool m_bIsForeignLang;
+  bool m_bIsUpdateTxDoc;
   int m_previd;
   int m_writtenEntry;
 };

@@ -1,5 +1,5 @@
 /*
- *      Copyright (C) 2012 Team XBMC
+ *      Copyright (C) 2014 Team Kodi
  *      http://www.xbmc.org
  *
  *  This Program is free software; you can redistribute it and/or modify
@@ -13,7 +13,7 @@
  *  GNU General Public License for more details.
  *
  *  You should have received a copy of the GNU General Public License
- *  along with XBMC; see the file COPYING.  If not, write to
+ *  along with Kodi; see the file COPYING.  If not, write to
  *  the Free Software Foundation, 675 Mass Ave, Cambridge, MA 02139, USA.
  *  http://www.gnu.org/copyleft/gpl.html
  *
@@ -85,7 +85,7 @@ void CLog::Log(TLogLevel loglevel, const char *format, ... )
   if (loglevel == logWARNING)
     m_numWarnings++;
 
-  fprintf(m_pLogFile, g_File.GetCurrTime().c_str());
+  fprintf(m_pLogFile, "%s", g_File.GetCurrTime().c_str());
   std::string strLogType;
   fprintf(m_pLogFile, "\t%s\t", listLogTypes[loglevel].c_str());
 
